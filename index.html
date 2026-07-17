@@ -179,11 +179,16 @@
 
   .item-row {
     background: var(--card); border: 1.5px solid var(--border); border-radius: 10px;
-    padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 14px; margin-bottom: 8px;
   }
   .item-row.status-nok { border-color: var(--nok); }
+  .item-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .item-row .item-label { font-size: 14px; font-weight: 500; flex: 1; }
   .status-btns { display: flex; gap: 6px; }
+  .item-extra { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+  .item-extra textarea { margin-bottom: 8px; font-size: 14px; min-height: 70px; }
+  .item-extra .required-tag { font-size: 11px; color: var(--nok); font-family: var(--mono); margin-bottom: 6px; display: block; }
+  .item-photo-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   .status-btn {
     font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 8px 10px;
     border-radius: 7px; border: 1.5px solid var(--border); background: var(--paper); cursor: pointer; min-width: 40px;
@@ -298,6 +303,9 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const TEMPLATES = {
   motorista: {
     statusSet: ['ok', 'nok', 'na'],
+    problemStatus: 'nok',
+    requireReasonOnProblem: true,
+    usesRota: true,
     sections: [
       ['Motor', ['Óleo motor', 'Filtro de ar', 'Correias', 'Nível de água']],
       ['Suspensão', ['Amortecedor', 'Molas', 'Jumelo traseiro', 'Jumelo dianteiro']],
@@ -312,6 +320,9 @@ const TEMPLATES = {
   },
   mecanico: {
     statusSet: ['ok', 'nok', 'na'],
+    problemStatus: 'nok',
+    requireReasonOnProblem: true,
+    usesRota: true,
     sections: [
       ['Pneus', ['Dianteiro', 'Traseiro', 'Calibragem', 'Estepe']],
       ['Freios', ['Lubrificação', 'Freio dianteiro', 'Freio traseiro', 'Tambores', 'Lonas']],
@@ -323,6 +334,9 @@ const TEMPLATES = {
   },
   lavador: {
     statusSet: ['sim', 'nao'],
+    problemStatus: 'nao',
+    requireReasonOnProblem: false,
+    usesRota: false,
     sections: [
       ['Limpeza do Veículo', ['Cabine externa', 'Para-brisa/retrovisores', 'Tanque de leite']],
       ['Extra', ['Lavagem geral', 'Limpeza caixa de gordura (2x/semana)']]
@@ -339,7 +353,11 @@ const PERFIL_LABELS = { motorista: 'Motorista', mecanico: 'Mecânico', lavador: 
 let state = {
   screen: 'login',
   usuarios: [],
+  loginQuery: '',
   veiculos: [],
+  rotas: [],
+  rotaQuery: '',
+  selectedRota: null,
   motoristas: [],
   selectedUsuario: null,
   currentUser: null,
@@ -347,7 +365,6 @@ let state = {
   tacografo: '',
   km: '',
   tipoRota: 'saida',
-  rota: '',
   motoristaRelacionado: '',
   motivo: '',
   abastecido: null,
@@ -363,7 +380,8 @@ let state = {
   allChecklists: [],
   selectedDetail: null,
   equipeForm: null,
-  veiculoForm: null
+  veiculoForm: null,
+  rotaForm: null
 };
 
 const app = document.getElementById('app');
@@ -375,7 +393,7 @@ function setState(patch) { state = { ...state, ...patch }; render(); }
 function initItens(perfil) {
   const itens = [];
   TEMPLATES[perfil].sections.forEach(([secao, lista]) => {
-    lista.forEach(item => itens.push({ secao, item, status: null }));
+    lista.forEach(item => itens.push({ secao, item, status: null, motivo: '', fotos: [], fotoPreviews: [] }));
   });
   return itens;
 }
@@ -404,6 +422,18 @@ async function loadHistory(usuarioId) {
   setState({ history: data || [] });
 }
 
+async function loadRotas() {
+  const { data, error } = await supabaseClient.from('rotas').select('*').eq('ativo', true).order('nome');
+  if (error) { setState({ error: 'Erro ao carregar rotas: ' + error.message }); return; }
+  setState({ rotas: data || [] });
+}
+
+async function loadAllRotasAdmin() {
+  const { data, error } = await supabaseClient.from('rotas').select('*').order('nome');
+  if (error) { setState({ error: 'Erro ao carregar rotas: ' + error.message }); return; }
+  setState({ rotas: data || [] });
+}
+
 async function loadAllChecklists(filter) {
   let q = supabaseClient.from('checklists').select('*').order('criado_em', { ascending: false }).limit(50);
   if (filter && filter !== 'todos') q = q.eq('status', filter);
@@ -429,7 +459,45 @@ async function loadAllVeiculosAdmin() {
 // ============================================================
 async function handlePickUser(usuarioId) {
   const u = state.usuarios.find(x => x.id === usuarioId);
-  setState({ selectedUsuario: u, screen: 'pin', error: null });
+  setState({ selectedUsuario: u, screen: 'pin', error: null, loginQuery: '' });
+}
+
+function buildUserResultsHtml(query) {
+  const q = (query || '').toLowerCase().trim();
+  if (!q) return `<p class="empty-msg">Digite pra buscar seu nome.</p>`;
+  const matches = state.usuarios.filter(u => u.nome.toLowerCase().includes(q));
+  if (matches.length === 0) return `<p class="empty-msg">Nenhum nome encontrado.</p>`;
+  return matches.map(u => `<div class="list-card" onclick="handlePickUser('${u.id}')">
+    <div class="list-placa">${u.nome}</div>
+    <div style="font-size:13px; color:var(--muted); margin-top:2px;">${PERFIL_LABELS[u.perfil]}</div>
+  </div>`).join('');
+}
+
+function filterLoginResults(value) {
+  state.loginQuery = value;
+  const el = document.getElementById('login-results');
+  if (el) el.innerHTML = buildUserResultsHtml(value);
+}
+
+function buildRotaResultsHtml(query) {
+  const q = (query || '').toLowerCase().trim();
+  if (!q) return `<p class="empty-msg">Digite pra buscar a rota.</p>`;
+  const matches = state.rotas.filter(r => r.nome.toLowerCase().includes(q));
+  if (matches.length === 0) return `<p class="empty-msg">Nenhuma rota encontrada.</p>`;
+  return matches.map(r => `<div class="list-card" onclick="handlePickRota('${r.id}')">
+    <div class="list-placa">${r.nome}</div>
+  </div>`).join('');
+}
+
+function filterRotaResults(value) {
+  state.rotaQuery = value;
+  const el = document.getElementById('rota-results');
+  if (el) el.innerHTML = buildRotaResultsHtml(value);
+}
+
+function handlePickRota(rotaId) {
+  const r = state.rotas.find(x => x.id === rotaId);
+  setState({ selectedRota: r, rotaQuery: '', error: null });
 }
 
 async function handleConfirmPin(pin) {
@@ -442,6 +510,7 @@ async function handleConfirmPin(pin) {
   } else {
     setState({ currentUser: user, screen: 'setup', error: null, itens: initItens(user.perfil) });
     await loadVeiculos();
+    if (TEMPLATES[user.perfil].usesRota) await loadRotas();
     if (user.perfil !== 'motorista') {
       const { data } = await supabaseClient.from('usuarios').select('nome').eq('perfil', 'motorista').eq('ativo', true);
       setState({ motoristas: data || [] });
@@ -452,10 +521,11 @@ async function handleConfirmPin(pin) {
 function handleLogout() {
   setState({
     screen: 'login', currentUser: null, selectedUsuario: null, selectedVeiculo: null,
-    tacografo: '', km: '', tipoRota: 'saida', rota: '', motoristaRelacionado: '', motivo: '',
+    tacografo: '', km: '', tipoRota: 'saida', motoristaRelacionado: '', motivo: '',
     abastecido: null, itens: [], observacoesGerais: '', fotos: [], fotoPreviews: [],
     error: null, history: [], usuarios: [], allChecklists: [], selectedDetail: null,
-    equipeForm: null, veiculoForm: null
+    equipeForm: null, veiculoForm: null, rotaForm: null, rotas: [], rotaQuery: '',
+    selectedRota: null, loginQuery: ''
   });
 }
 
@@ -463,16 +533,23 @@ function handleLogout() {
 // AÇÕES - CHECKLIST (motorista/mecânico/lavador)
 // ============================================================
 function handleStartChecklist() {
+  const perfil = state.currentUser.perfil;
+  const tpl = TEMPLATES[perfil];
   const veiculoId = document.getElementById('sel-veiculo').value;
   const v = state.veiculos.find(x => x.id === veiculoId);
   if (!v) { setState({ error: 'Selecione um veículo.' }); return; }
   const tacografo = document.getElementById('input-tacografo') ? document.getElementById('input-tacografo').value : '';
   const km = document.getElementById('input-km') ? document.getElementById('input-km').value : '';
-  const rota = document.getElementById('input-rota') ? document.getElementById('input-rota').value : '';
   const motoristaRel = document.getElementById('sel-motorista-rel') ? document.getElementById('sel-motorista-rel').value : '';
   const motivo = document.getElementById('input-motivo') ? document.getElementById('input-motivo').value : '';
+
+  if (tpl.usesRota) {
+    if (!km || Number(km) <= 0) { setState({ error: 'Informe a quilometragem do veículo.' }); return; }
+    if (!state.selectedRota) { setState({ error: 'Selecione a rota.' }); return; }
+  }
+
   setState({
-    selectedVeiculo: v, tacografo, km, rota, motoristaRelacionado: motoristaRel, motivo,
+    selectedVeiculo: v, tacografo, km, motoristaRelacionado: motoristaRel, motivo,
     screen: 'checklist', error: null
   });
 }
@@ -489,6 +566,18 @@ function addFotos(fileList) {
   setState({ fotos: [...state.fotos, ...files], fotoPreviews: [...state.fotoPreviews, ...previews] });
 }
 
+function addItemFoto(index, fileList) {
+  const files = Array.from(fileList);
+  const previews = files.map(f => URL.createObjectURL(f));
+  const itens = [...state.itens];
+  itens[index] = {
+    ...itens[index],
+    fotos: [...itens[index].fotos, ...files],
+    fotoPreviews: [...itens[index].fotoPreviews, ...previews]
+  };
+  setState({ itens });
+}
+
 async function uploadFoto(file) {
   const ext = (file.name.split('.').pop() || 'jpg');
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
@@ -499,34 +588,56 @@ async function uploadFoto(file) {
 }
 
 async function handleSubmitChecklist() {
+  const perfil = state.currentUser.perfil;
+  const tpl = TEMPLATES[perfil];
   const semStatus = state.itens.filter(i => !i.status);
   if (semStatus.length > 0) {
     setState({ error: `Marque o status de todos os itens (falta: "${semStatus[0].item}").` });
     return;
   }
+  if (tpl.requireReasonOnProblem) {
+    const semMotivo = state.itens.find(i => i.status === tpl.problemStatus && !i.motivo.trim());
+    if (semMotivo) {
+      setState({ error: `Explique o motivo do problema em "${semMotivo.item}".` });
+      return;
+    }
+  }
   setState({ submitting: true, error: null });
   try {
     const fotoUrls = [];
     for (const f of state.fotos) fotoUrls.push(await uploadFoto(f));
+
+    const itensPayload = [];
+    for (const item of state.itens) {
+      const itemFotoUrls = [];
+      for (const f of item.fotos) itemFotoUrls.push(await uploadFoto(f));
+      itensPayload.push({
+        secao: item.secao, item: item.item, status: item.status,
+        motivo: item.motivo || '', fotos: itemFotoUrls
+      });
+    }
+
     const payload = {
       usuario_id: state.currentUser.id,
       usuario_nome: state.currentUser.nome,
       veiculo_id: state.selectedVeiculo.id,
       veiculo_placa: state.selectedVeiculo.placa,
-      perfil: state.currentUser.perfil,
+      perfil: perfil,
       tacografo: state.tacografo || null,
       km: state.km ? Number(state.km) : null,
       motorista_relacionado: state.motoristaRelacionado || null,
-      itens: state.itens.map(i => ({ secao: i.secao, item: i.item, status: i.status })),
+      itens: itensPayload,
       observacoes_gerais: state.observacoesGerais || null,
       fotos: fotoUrls,
       status: 'pendente'
     };
-    if (state.currentUser.perfil === 'motorista') {
-      payload.tipo_rota = state.tipoRota;
-      payload.rota = state.rota || null;
+    if (tpl.usesRota) {
+      payload.rota = state.selectedRota ? state.selectedRota.nome : null;
     }
-    if (state.currentUser.perfil === 'mecanico') {
+    if (perfil === 'motorista') {
+      payload.tipo_rota = state.tipoRota;
+    }
+    if (perfil === 'mecanico') {
       payload.motivo = state.motivo || null;
       payload.abastecido = state.abastecido;
     }
@@ -545,7 +656,7 @@ async function handleShowHistory() {
 
 function handleNewChecklist() {
   setState({
-    screen: 'setup', selectedVeiculo: null, tacografo: '', km: '', rota: '',
+    screen: 'setup', selectedVeiculo: null, tacografo: '', km: '', selectedRota: null, rotaQuery: '',
     motoristaRelacionado: '', motivo: '', abastecido: null, observacoesGerais: '',
     fotos: [], fotoPreviews: [], itens: initItens(state.currentUser.perfil), error: null
   });
@@ -559,6 +670,38 @@ async function switchSupervisorTab(tab) {
   if (tab === 'checklists') await loadAllChecklists(state.checklistFilter);
   if (tab === 'equipe') await loadAllUsuariosAdmin();
   if (tab === 'veiculos') await loadAllVeiculosAdmin();
+  if (tab === 'rotas') await loadAllRotasAdmin();
+}
+
+function openRotaForm(rota) {
+  setState({ rotaForm: rota ? { ...rota } : { id: null, nome: '', ativo: true } });
+}
+
+async function saveRotaForm() {
+  const f = state.rotaForm;
+  if (!f.nome) { setState({ error: 'Preencha o nome da rota.' }); return; }
+  let error;
+  if (f.id) {
+    ({ error } = await supabaseClient.from('rotas').update({ nome: f.nome, ativo: f.ativo }).eq('id', f.id));
+  } else {
+    ({ error } = await supabaseClient.from('rotas').insert({ nome: f.nome, ativo: f.ativo }));
+  }
+  if (error) { setState({ error: 'Erro ao salvar: ' + error.message }); return; }
+  setState({ rotaForm: null, error: null });
+  await loadAllRotasAdmin();
+}
+
+async function toggleRotaAtivo(r) {
+  const { error } = await supabaseClient.from('rotas').update({ ativo: !r.ativo }).eq('id', r.id);
+  if (error) { setState({ error: 'Erro: ' + error.message }); return; }
+  await loadAllRotasAdmin();
+}
+
+async function deleteRota(r) {
+  if (!confirm(`Excluir a rota "${r.nome}" definitivamente?`)) return;
+  const { error } = await supabaseClient.from('rotas').delete().eq('id', r.id);
+  if (error) { setState({ error: 'Erro ao excluir: ' + error.message }); return; }
+  await loadAllRotasAdmin();
 }
 
 async function setChecklistFilter(f) {
@@ -604,6 +747,16 @@ async function toggleUsuarioAtivo(u) {
   await loadAllUsuariosAdmin();
 }
 
+async function deleteUsuario(u) {
+  if (!confirm(`Excluir "${u.nome}" definitivamente? Essa ação não pode ser desfeita.`)) return;
+  const { error } = await supabaseClient.from('usuarios').delete().eq('id', u.id);
+  if (error) {
+    setState({ error: 'Não deu pra excluir (provavelmente já tem checklists desse usuário). Use "Desativar" em vez disso.' });
+    return;
+  }
+  await loadAllUsuariosAdmin();
+}
+
 function openVeiculoForm(veiculo) {
   setState({ veiculoForm: veiculo ? { ...veiculo } : { id: null, placa: '', modelo: '', tipo: '', ativo: true } });
 }
@@ -625,6 +778,16 @@ async function saveVeiculoForm() {
 async function toggleVeiculoAtivo(v) {
   const { error } = await supabaseClient.from('veiculos').update({ ativo: !v.ativo }).eq('id', v.id);
   if (error) { setState({ error: 'Erro: ' + error.message }); return; }
+  await loadAllVeiculosAdmin();
+}
+
+async function deleteVeiculo(v) {
+  if (!confirm(`Excluir o veículo "${v.placa}" definitivamente? Essa ação não pode ser desfeita.`)) return;
+  const { error } = await supabaseClient.from('veiculos').delete().eq('id', v.id);
+  if (error) {
+    setState({ error: 'Não deu pra excluir (provavelmente já tem checklists desse veículo). Use "Desativar" em vez disso.' });
+    return;
+  }
   await loadAllVeiculosAdmin();
 }
 
@@ -657,14 +820,12 @@ function renderLogin() {
     setTimeout(loadUsuarios, 0);
     return `<div class="loading-msg">Carregando usuários...</div>`;
   }
-  const options = state.usuarios.map(u => `<option value="${u.id}">${u.nome} (${PERFIL_LABELS[u.perfil]})</option>`).join('');
   return `
     <h1 class="title">Fazer login</h1>
-    <p class="subtitle">Escolha seu nome na lista para continuar.</p>
+    <p class="subtitle">Digite seu nome para continuar.</p>
     <label class="field-label">Seu nome</label>
-    <select onchange="handlePickUser(this.value)">
-      <option value="">Selecione...</option>${options}
-    </select>
+    <input type="text" id="login-search" placeholder="Comece a digitar..." autocomplete="off" oninput="filterLoginResults(this.value)" autofocus>
+    <div id="login-results">${buildUserResultsHtml(state.loginQuery)}</div>
   `;
 }
 
@@ -682,6 +843,7 @@ function renderPin() {
 function renderSetup() {
   if (state.veiculos.length === 0) return `<div class="loading-msg">Carregando veículos...</div>`;
   const perfil = state.currentUser.perfil;
+  const tpl = TEMPLATES[perfil];
   const vOptions = state.veiculos.map(v => `<option value="${v.id}">${v.placa}${v.modelo ? ' — ' + v.modelo : ''}</option>`).join('');
   let extra = '';
 
@@ -692,8 +854,6 @@ function renderSetup() {
         <button type="button" class="toggle-btn ${state.tipoRota === 'saida' ? 'active' : ''}" onclick="setState({tipoRota:'saida'})">Saída</button>
         <button type="button" class="toggle-btn ${state.tipoRota === 'retorno' ? 'active' : ''}" onclick="setState({tipoRota:'retorno'})">Retorno</button>
       </div>
-      <label class="field-label">Rota (opcional)</label>
-      <input type="text" id="input-rota" placeholder="Ex: Rota Norte">
     `;
   } else {
     const motOptions = state.motoristas.map(m => `<option value="${m.nome}">${m.nome}</option>`).join('');
@@ -709,6 +869,28 @@ function renderSetup() {
     }
   }
 
+  let rotaBlock = '';
+  if (tpl.usesRota) {
+    if (state.rotas.length === 0) {
+      setTimeout(loadRotas, 0);
+      rotaBlock = `<label class="field-label">Rota</label><div class="loading-msg" style="padding:14px 0;">Carregando rotas...</div>`;
+    } else if (state.selectedRota) {
+      rotaBlock = `
+        <label class="field-label">Rota</label>
+        <div class="list-card" style="display:flex; align-items:center; justify-content:space-between; cursor:default;">
+          <span class="list-placa">${state.selectedRota.nome}</span>
+          <button class="icon-btn" onclick="setState({selectedRota:null, rotaQuery:''})">Trocar</button>
+        </div>
+      `;
+    } else {
+      rotaBlock = `
+        <label class="field-label">Rota</label>
+        <input type="text" id="rota-search" placeholder="Digite pra buscar a rota..." autocomplete="off" oninput="filterRotaResults(this.value)">
+        <div id="rota-results">${buildRotaResultsHtml(state.rotaQuery)}</div>
+      `;
+    }
+  }
+
   return `
     <h1 class="title">Novo checklist</h1>
     <p class="subtitle">Preencha os dados do veículo antes de começar.</p>
@@ -716,9 +898,10 @@ function renderSetup() {
     <select id="sel-veiculo"><option value="">Selecione...</option>${vOptions}</select>
     <label class="field-label">Tacógrafo (opcional)</label>
     <input type="text" id="input-tacografo" placeholder="Número do tacógrafo">
-    <label class="field-label">KM do veículo (opcional)</label>
+    <label class="field-label">KM do veículo${tpl.usesRota ? '' : ' (opcional)'}</label>
     <input type="number" id="input-km" placeholder="Ex: 152340">
     ${extra}
+    ${rotaBlock}
     <button class="btn-primary" onclick="handleStartChecklist()">Iniciar checklist</button>
     <button class="btn-secondary" onclick="handleShowHistory()">Ver meu histórico</button>
   `;
@@ -739,9 +922,23 @@ function renderChecklist() {
       const btns = tpl.statusSet.map(st =>
         `<button class="status-btn ${it.status === st ? 'active' : ''}" data-s="${st}" onclick="setItemStatus(${idx}, '${st}')">${STATUS_LABELS[st]}</button>`
       ).join('');
-      return `<div class="item-row ${it.status === 'nok' || it.status === 'nao' ? 'status-nok' : ''}">
-        <div class="item-label">${itemNome}</div>
-        <div class="status-btns">${btns}</div>
+      const isProblem = it.status === tpl.problemStatus;
+      const extraHtml = (isProblem && tpl.requireReasonOnProblem) ? `
+        <div class="item-extra">
+          <span class="required-tag">Explique o motivo (obrigatório)</span>
+          <textarea placeholder="Descreva o problema encontrado..." oninput="state.itens[${idx}].motivo=this.value">${it.motivo}</textarea>
+          <div class="item-photo-strip">${it.fotoPreviews.map(p => `<img class="photo-thumb" src="${p}">`).join('')}</div>
+          <label class="photo-add-btn">📷 Foto (opcional)
+            <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addItemFoto(${idx}, this.files)">
+          </label>
+        </div>
+      ` : '';
+      return `<div class="item-row ${isProblem ? 'status-nok' : ''}">
+        <div class="item-top">
+          <div class="item-label">${itemNome}</div>
+          <div class="status-btns">${btns}</div>
+        </div>
+        ${extraHtml}
       </div>`;
     }).join('');
     return `<div class="section-block">
@@ -821,11 +1018,13 @@ function renderSupervisorHome() {
     <button class="tab-btn ${state.supervisorTab === 'checklists' ? 'active' : ''}" onclick="switchSupervisorTab('checklists')">Checklists</button>
     <button class="tab-btn ${state.supervisorTab === 'equipe' ? 'active' : ''}" onclick="switchSupervisorTab('equipe')">Equipe</button>
     <button class="tab-btn ${state.supervisorTab === 'veiculos' ? 'active' : ''}" onclick="switchSupervisorTab('veiculos')">Veículos</button>
+    <button class="tab-btn ${state.supervisorTab === 'rotas' ? 'active' : ''}" onclick="switchSupervisorTab('rotas')">Rotas</button>
   </div>`;
 
   if (state.supervisorTab === 'checklists') return tabs + renderSupervisorChecklists();
   if (state.supervisorTab === 'equipe') return tabs + renderSupervisorEquipe();
   if (state.supervisorTab === 'veiculos') return tabs + renderSupervisorVeiculos();
+  if (state.supervisorTab === 'rotas') return tabs + renderSupervisorRotas();
   return tabs;
 }
 
@@ -855,7 +1054,15 @@ function renderChecklistDetail() {
   const sectionsHtml = Object.keys(bySecao).map(secao => `
     <div class="detail-section">
       <div class="section-head"><span class="section-name">${secao}</span></div>
-      ${bySecao[secao].map(i => `<div class="detail-item-row"><span>${i.item}</span><span class="detail-status-tag ${i.status}">${STATUS_LABELS[i.status] || i.status}</span></div>`).join('')}
+      ${bySecao[secao].map(i => `
+        <div class="detail-item-row" style="${i.motivo ? 'flex-direction:column; align-items:flex-start; gap:6px;' : ''}">
+          <div style="display:flex; justify-content:space-between; width:100%;">
+            <span>${i.item}</span><span class="detail-status-tag ${i.status}">${STATUS_LABELS[i.status] || i.status}</span>
+          </div>
+          ${i.motivo ? `<div style="font-size:13px; color:var(--muted);">${i.motivo}</div>` : ''}
+          ${(i.fotos && i.fotos.length > 0) ? `<div class="photo-strip">${i.fotos.map(url => `<img class="photo-thumb" src="${url}">`).join('')}</div>` : ''}
+        </div>
+      `).join('')}
     </div>
   `).join('');
 
@@ -865,7 +1072,7 @@ function renderChecklistDetail() {
     <div class="meta-cell"><div class="k">Data</div><div class="v">${formatDate(h.criado_em)}</div></div>
     <div class="meta-cell"><div class="k">KM</div><div class="v">${h.km || '—'}</div></div>
     ${h.tacografo ? `<div class="meta-cell"><div class="k">Tacógrafo</div><div class="v">${h.tacografo}</div></div>` : ''}
-    ${h.rota ? `<div class="meta-cell"><div class="k">Rota</div><div class="v">${h.rota} (${h.tipo_rota === 'retorno' ? 'Retorno' : 'Saída'})</div></div>` : ''}
+    ${h.rota ? `<div class="meta-cell"><div class="k">Rota</div><div class="v">${h.rota}${h.tipo_rota ? ' (' + (h.tipo_rota === 'retorno' ? 'Retorno' : 'Saída') + ')' : ''}</div></div>` : ''}
     ${h.motorista_relacionado ? `<div class="meta-cell"><div class="k">Motorista</div><div class="v">${h.motorista_relacionado}</div></div>` : ''}
     ${h.perfil === 'mecanico' ? `<div class="meta-cell"><div class="k">Abastecimento</div><div class="v">${h.abastecido === true ? 'Sim' : h.abastecido === false ? 'Não' : '—'}</div></div>` : ''}
   </div>`;
@@ -885,6 +1092,32 @@ function renderChecklistDetail() {
     ${h.status === 'pendente' ? `<button class="btn-primary" onclick="handleApproveChecklist('${h.id}')">Aprovar checklist</button>` : `<p class="subtitle">Aprovado por ${h.aprovado_por} em ${formatDate(h.aprovado_em)}</p>`}
     <button class="btn-secondary" onclick="setState({screen:'supervisor_home'})">Voltar</button>
   `;
+}
+
+function renderSupervisorRotas() {
+  if (state.rotaForm) {
+    const f = state.rotaForm;
+    return `
+      <div class="form-card">
+        <label class="field-label">Nome da rota</label>
+        <input type="text" value="${f.nome}" oninput="state.rotaForm.nome=this.value" placeholder="Ex: Rota Norte">
+        <button class="btn-primary" onclick="saveRotaForm()">Salvar</button>
+        <button class="btn-secondary" onclick="setState({rotaForm:null, error:null})">Cancelar</button>
+      </div>
+    `;
+  }
+  if (state.rotas.length === 0) { setTimeout(loadAllRotasAdmin, 0); return `<div class="loading-msg">Carregando rotas...</div>`; }
+  const rows = state.rotas.map(r => `
+    <div class="admin-row">
+      <div class="name">${r.nome} ${!r.ativo ? '<span class="badge" style="background:#ECEAE2;color:var(--muted);">inativa</span>' : ''}</div>
+      <div class="actions">
+        <button class="icon-btn" onclick='openRotaForm(${JSON.stringify(r)})'>Editar</button>
+        <button class="icon-btn" onclick='toggleRotaAtivo(${JSON.stringify(r)})'>${r.ativo ? 'Desativar' : 'Ativar'}</button>
+        <button class="icon-btn danger" onclick='deleteRota(${JSON.stringify(r)})'>Excluir</button>
+      </div>
+    </div>
+  `).join('');
+  return `<button class="fab" onclick="openRotaForm(null)">+ Nova rota</button>${rows}`;
 }
 
 function renderSupervisorEquipe() {
@@ -914,7 +1147,8 @@ function renderSupervisorEquipe() {
       </div>
       <div class="actions">
         <button class="icon-btn" onclick='openEquipeForm(${JSON.stringify(u)})'>Editar</button>
-        <button class="icon-btn ${u.ativo ? 'danger' : ''}" onclick='toggleUsuarioAtivo(${JSON.stringify(u)})'>${u.ativo ? 'Desativar' : 'Ativar'}</button>
+        <button class="icon-btn" onclick='toggleUsuarioAtivo(${JSON.stringify(u)})'>${u.ativo ? 'Desativar' : 'Ativar'}</button>
+        <button class="icon-btn danger" onclick='deleteUsuario(${JSON.stringify(u)})'>Excluir</button>
       </div>
     </div>
   `).join('');
@@ -946,7 +1180,8 @@ function renderSupervisorVeiculos() {
       </div>
       <div class="actions">
         <button class="icon-btn" onclick='openVeiculoForm(${JSON.stringify(v)})'>Editar</button>
-        <button class="icon-btn ${v.ativo ? 'danger' : ''}" onclick='toggleVeiculoAtivo(${JSON.stringify(v)})'>${v.ativo ? 'Desativar' : 'Ativar'}</button>
+        <button class="icon-btn" onclick='toggleVeiculoAtivo(${JSON.stringify(v)})'>${v.ativo ? 'Desativar' : 'Ativar'}</button>
+        <button class="icon-btn danger" onclick='deleteVeiculo(${JSON.stringify(v)})'>Excluir</button>
       </div>
     </div>
   `).join('');
