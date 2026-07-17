@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>ChecklistOP</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.39.7/supabase.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1B241F;
+    --paper: #F1F4EC;
+    --card: #FFFFFF;
+    --slate: #202B2A;
+    --slate-2: #2B3936;
+    --green: #2F6B4F;
+    --green-dark: #234F3A;
+    --amber: #D9A441;
+    --amber-dark: #B7863A;
+    --ok: #3B8F63;
+    --nok: #C0453A;
+    --na: #8B8677;
+    --border: #D6D9C9;
+    --muted: #63695C;
+    --display: 'Space Grotesk', sans-serif;
+    --body: 'Inter', -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    min-height: 100vh;
+  }
+
+  #app {
+    max-width: 520px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper);
+  }
+
+  /* ---------- Header ---------- */
+  header.topbar {
+    background: var(--slate);
+    color: #EDEFE6;
+    padding: 20px 20px 16px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  header.topbar .row1 {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .brand {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.01em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand .clip {
+    width: 14px; height: 20px;
+    border: 2.5px solid var(--amber);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    flex-shrink: 0;
+  }
+  .user-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #B9BEAE;
+    text-align: right;
+    line-height: 1.4;
+  }
+  .user-chip button {
+    background: none; border: none; color: var(--amber);
+    font-family: var(--mono); font-size: 11px; cursor: pointer; padding: 0;
+    text-decoration: underline;
+  }
+
+  /* ---------- Layout ---------- */
+  main { flex: 1; padding: 20px 20px 110px 20px; }
+  .screen { animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px);} to { opacity: 1; transform: translateY(0);} }
+
+  h1.title {
+    font-family: var(--display);
+    font-size: 24px;
+    font-weight: 700;
+    margin: 4px 0 4px 0;
+    letter-spacing: -0.01em;
+  }
+  p.subtitle { color: var(--muted); font-size: 14px; margin: 0 0 22px 0; line-height: 1.4; }
+
+  label.field-label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  select, input[type="text"], input[type="number"], textarea {
+    width: 100%;
+    padding: 13px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    font-size: 15px;
+    font-family: var(--body);
+    color: var(--ink);
+    margin-bottom: 16px;
+  }
+  select:focus, input:focus, textarea:focus { outline: none; border-color: var(--green); }
+  textarea { resize: vertical; min-height: 90px; }
+
+  input.pin-input {
+    font-family: var(--mono);
+    font-size: 30px;
+    letter-spacing: 0.45em;
+    text-align: center;
+    padding: 16px;
+  }
+
+  .toggle-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .toggle-btn {
+    padding: 12px; border-radius: 10px; border: 1.5px solid var(--border);
+    background: var(--card); font-weight: 600; font-size: 14px; cursor: pointer; color: var(--muted);
+  }
+  .toggle-btn.active { background: var(--green); color: #fff; border-color: var(--green); }
+
+  button.btn-primary {
+    width: 100%; padding: 16px; background: var(--green); color: #fff;
+    border: none; border-radius: 12px; font-size: 15px; font-weight: 700;
+    font-family: var(--body); letter-spacing: 0.01em; cursor: pointer;
+  }
+  button.btn-primary:active { transform: scale(0.98); }
+  button.btn-primary:disabled { background: #C6CABB; color: #8A8F80; }
+
+  button.btn-amber {
+    width: 100%; padding: 14px; background: var(--amber); color: var(--slate);
+    border: none; border-radius: 12px; font-weight: 700; font-size: 14px; cursor: pointer;
+  }
+
+  button.btn-secondary {
+    width: 100%; padding: 13px; background: transparent; color: var(--green);
+    border: 1.5px solid var(--green); border-radius: 12px; font-weight: 600;
+    font-size: 14px; cursor: pointer; margin-top: 10px;
+  }
+
+  button.btn-ghost {
+    background: none; border: none; color: var(--muted); font-size: 13px;
+    text-decoration: underline; cursor: pointer; padding: 0; font-family: var(--body);
+  }
+
+  /* ---------- Checklist sections ---------- */
+  .section-block { margin-bottom: 22px; }
+  .section-head {
+    display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px;
+    padding-bottom: 6px; border-bottom: 2px solid var(--slate);
+  }
+  .section-num { font-family: var(--mono); font-size: 12px; color: var(--amber-dark); font-weight: 700; }
+  .section-name { font-family: var(--display); font-weight: 700; font-size: 15px; text-transform: uppercase; letter-spacing: 0.02em; }
+
+  .item-row {
+    background: var(--card); border: 1.5px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .item-row.status-nok { border-color: var(--nok); }
+  .item-row .item-label { font-size: 14px; font-weight: 500; flex: 1; }
+  .status-btns { display: flex; gap: 6px; }
+  .status-btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 8px 10px;
+    border-radius: 7px; border: 1.5px solid var(--border); background: var(--paper); cursor: pointer; min-width: 40px;
+  }
+  .status-btn[data-s="ok"].active, .status-btn[data-s="sim"].active { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .status-btn[data-s="nok"].active, .status-btn[data-s="nao"].active { background: var(--nok); color: #fff; border-color: var(--nok); }
+  .status-btn[data-s="na"].active { background: var(--na); color: #fff; border-color: var(--na); }
+
+  .photo-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .photo-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1.5px solid var(--border); }
+  .photo-add-btn {
+    font-size: 12px; padding: 10px 14px; border-radius: 8px; border: 1.5px dashed var(--border);
+    background: transparent; color: var(--muted); cursor: pointer; display: inline-block;
+  }
+
+  .sticky-footer {
+    position: sticky; bottom: 0;
+    background: linear-gradient(to top, var(--paper) 65%, transparent);
+    padding: 14px 20px 18px 20px; margin: 0 -20px;
+  }
+  .progress-pill { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 10px; }
+
+  .error-msg { background: #FBE7E4; color: var(--nok); padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+  .loading-msg, .empty-msg { text-align: center; color: var(--muted); padding: 36px 0; font-family: var(--mono); font-size: 13px; }
+
+  /* ---------- Stamp ---------- */
+  .stamp-wrap { display: flex; flex-direction: column; align-items: center; padding: 44px 20px; text-align: center; }
+  .stamp {
+    border: 4px solid var(--ok); color: var(--ok); font-family: var(--mono); font-weight: 800;
+    font-size: 20px; letter-spacing: 0.08em; padding: 14px 22px; border-radius: 8px;
+    transform: rotate(-5deg); animation: stampIn 0.3s cubic-bezier(.2,1.3,.4,1); margin-bottom: 18px;
+  }
+  @keyframes stampIn { from { transform: rotate(-5deg) scale(2); opacity: 0;} to { transform: rotate(-5deg) scale(1); opacity: 1;} }
+  .stamp-detail { color: var(--muted); font-size: 14px; margin-bottom: 26px; }
+
+  /* ---------- History / lists ---------- */
+  .list-card {
+    background: var(--card); border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 10px; cursor: pointer;
+  }
+  .list-top { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .list-placa { font-weight: 700; font-size: 15px; }
+  .badge { display: inline-block; font-size: 10px; font-family: var(--mono); padding: 3px 8px; border-radius: 100px; font-weight: 700; text-transform: uppercase; }
+  .badge.motorista { background: #DCEEE7; color: var(--green); }
+  .badge.mecanico { background: #FBE6CC; color: var(--amber-dark); }
+  .badge.lavador { background: #DCE8F5; color: #2A5C8A; }
+  .badge.pendente { background: #FBE6CC; color: var(--amber-dark); }
+  .badge.aprovado { background: #DCEEE7; color: var(--green); }
+
+  /* ---------- Tabs (supervisor) ---------- */
+  .tabs { display: flex; gap: 6px; margin-bottom: 20px; background: var(--slate-2); padding: 4px; border-radius: 12px; }
+  .tab-btn {
+    flex: 1; padding: 10px 6px; border: none; background: transparent; color: #C6C9BB;
+    font-weight: 600; font-size: 13px; border-radius: 9px; cursor: pointer;
+  }
+  .tab-btn.active { background: var(--amber); color: var(--slate); }
+
+  .filter-row { display: flex; gap: 6px; margin-bottom: 16px; }
+  .filter-btn {
+    padding: 7px 12px; border-radius: 100px; border: 1.5px solid var(--border);
+    background: var(--card); font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer;
+  }
+  .filter-btn.active { background: var(--slate); color: #fff; border-color: var(--slate); }
+
+  .admin-row {
+    background: var(--card); border: 1.5px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .admin-row .name { font-weight: 600; font-size: 14px; }
+  .admin-row .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .admin-row .actions { display: flex; gap: 8px; align-items: center; }
+  .icon-btn {
+    background: none; border: 1.5px solid var(--border); border-radius: 8px; padding: 6px 10px;
+    font-size: 12px; cursor: pointer; color: var(--muted); font-family: var(--body);
+  }
+  .icon-btn.danger { color: var(--nok); border-color: var(--nok); }
+
+  .fab {
+    width: 100%; padding: 14px; border-radius: 12px; border: 2px dashed var(--green);
+    background: transparent; color: var(--green); font-weight: 700; font-size: 14px; cursor: pointer; margin-bottom: 18px;
+  }
+
+  .form-card { background: var(--card); border: 1.5px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+
+  .detail-section { margin-bottom: 16px; }
+  .detail-item-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .detail-status-tag { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+  .detail-status-tag.ok, .detail-status-tag.sim { background: #DCEEE7; color: var(--ok); }
+  .detail-status-tag.nok, .detail-status-tag.nao { background: #FBE4E1; color: var(--nok); }
+  .detail-status-tag.na { background: #ECEAE2; color: var(--na); }
+
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .meta-cell { background: var(--card); border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .meta-cell .k { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; }
+  .meta-cell .v { font-size: 14px; font-weight: 600; margin-top: 2px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ============================================================
+// CONFIGURAÇÃO - preencha com os dados do SEU projeto Supabase
+// ============================================================
+const SUPABASE_URL = 'https://vorzqccughqlfkofhqzk.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_xp4MIQYAB6sma32FvAtbzQ_vPrw9Ic4';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================
+// TEMPLATES DE CHECKLIST POR PERFIL
+// ============================================================
+const TEMPLATES = {
+  motorista: {
+    statusSet: ['ok', 'nok', 'na'],
+    sections: [
+      ['Motor', ['Óleo motor', 'Filtro de ar', 'Correias', 'Nível de água']],
+      ['Suspensão', ['Amortecedor', 'Molas', 'Jumelo traseiro', 'Jumelo dianteiro']],
+      ['Luzes', ['Setas e pisca alerta', 'Farolete', 'Farol alto e farol baixo', 'Luz de freio e luz de ré', 'Buzina']],
+      ['Limpeza do Veículo', ['Cabine externa', 'Cabine interna', 'Painel', 'Para-brisa/retrovisores', 'Tanque de leite']],
+      ['Pneus', ['Dianteiro', 'Traseiro', 'Calibragem', 'Estepe']],
+      ['Freios', ['Freio dianteiro', 'Freio traseiro', 'Tambores', 'Lonas']],
+      ['Tanque de Leite', ['Tampas', 'Suspiros', 'Borrachas', 'Agulhas']],
+      ['Segurança', ['Cinto de segurança', 'Macaco', 'Chave de rodas']],
+      ['Câmeras', ['Câmera dianteira', 'Câmera do motorista', 'Posicionamento/alinhamento correto', 'Lente limpa/visibilidade']]
+    ]
+  },
+  mecanico: {
+    statusSet: ['ok', 'nok', 'na'],
+    sections: [
+      ['Pneus', ['Dianteiro', 'Traseiro', 'Calibragem', 'Estepe']],
+      ['Freios', ['Lubrificação', 'Freio dianteiro', 'Freio traseiro', 'Tambores', 'Lonas']],
+      ['Tanque de Leite', ['Tampa', 'Suspiros', 'Borrachas', 'Agulhas']],
+      ['Luzes', ['Setas e pisca alerta', 'Farolete', 'Farol alto e farol baixo', 'Luz de freio e luz de ré', 'Buzina']],
+      ['Suspensão', ['Amortecedor', 'Molas', 'Jumelo traseiro', 'Jumelo dianteiro']],
+      ['Reaperto', ['Feixe de mola', 'Tanque', 'Bomba de leite']]
+    ]
+  },
+  lavador: {
+    statusSet: ['sim', 'nao'],
+    sections: [
+      ['Limpeza do Veículo', ['Cabine externa', 'Para-brisa/retrovisores', 'Tanque de leite']],
+      ['Extra', ['Lavagem geral', 'Limpeza caixa de gordura (2x/semana)']]
+    ]
+  }
+};
+
+const STATUS_LABELS = { ok: 'OK', nok: 'NOK', na: 'N/A', sim: 'SIM', nao: 'NÃO' };
+const PERFIL_LABELS = { motorista: 'Motorista', mecanico: 'Mecânico', lavador: 'Lavador', supervisor: 'Supervisor' };
+
+// ============================================================
+// ESTADO
+// ============================================================
+let state = {
+  screen: 'login',
+  usuarios: [],
+  veiculos: [],
+  motoristas: [],
+  selectedUsuario: null,
+  currentUser: null,
+  selectedVeiculo: null,
+  tacografo: '',
+  km: '',
+  tipoRota: 'saida',
+  rota: '',
+  motoristaRelacionado: '',
+  motivo: '',
+  abastecido: null,
+  itens: [],
+  observacoesGerais: '',
+  fotos: [],
+  fotoPreviews: [],
+  submitting: false,
+  error: null,
+  history: [],
+  supervisorTab: 'checklists',
+  checklistFilter: 'pendente',
+  allChecklists: [],
+  selectedDetail: null,
+  equipeForm: null,
+  veiculoForm: null
+};
+
+const app = document.getElementById('app');
+function setState(patch) { state = { ...state, ...patch }; render(); }
+
+// ============================================================
+// HELPERS
+// ============================================================
+function initItens(perfil) {
+  const itens = [];
+  TEMPLATES[perfil].sections.forEach(([secao, lista]) => {
+    lista.forEach(item => itens.push({ secao, item, status: null }));
+  });
+  return itens;
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function loadUsuarios() {
+  const { data, error } = await supabaseClient.from('usuarios').select('*').eq('ativo', true).order('nome');
+  if (error) { setState({ error: 'Erro ao carregar usuários: ' + error.message }); return; }
+  setState({ usuarios: data || [] });
+}
+
+async function loadVeiculos() {
+  const { data, error } = await supabaseClient.from('veiculos').select('*').eq('ativo', true).order('placa');
+  if (error) { setState({ error: 'Erro ao carregar veículos: ' + error.message }); return; }
+  setState({ veiculos: data || [] });
+}
+
+async function loadHistory(usuarioId) {
+  const { data, error } = await supabaseClient.from('checklists').select('*')
+    .eq('usuario_id', usuarioId).order('criado_em', { ascending: false }).limit(20);
+  if (error) { setState({ error: 'Erro ao carregar histórico: ' + error.message }); return; }
+  setState({ history: data || [] });
+}
+
+async function loadAllChecklists(filter) {
+  let q = supabaseClient.from('checklists').select('*').order('criado_em', { ascending: false }).limit(50);
+  if (filter && filter !== 'todos') q = q.eq('status', filter);
+  const { data, error } = await q;
+  if (error) { setState({ error: 'Erro ao carregar checklists: ' + error.message }); return; }
+  setState({ allChecklists: data || [] });
+}
+
+async function loadAllUsuariosAdmin() {
+  const { data, error } = await supabaseClient.from('usuarios').select('*').order('nome');
+  if (error) { setState({ error: 'Erro ao carregar equipe: ' + error.message }); return; }
+  setState({ usuarios: data || [] });
+}
+
+async function loadAllVeiculosAdmin() {
+  const { data, error } = await supabaseClient.from('veiculos').select('*').order('placa');
+  if (error) { setState({ error: 'Erro ao carregar veículos: ' + error.message }); return; }
+  setState({ veiculos: data || [] });
+}
+
+// ============================================================
+// AÇÕES - LOGIN
+// ============================================================
+async function handlePickUser(usuarioId) {
+  const u = state.usuarios.find(x => x.id === usuarioId);
+  setState({ selectedUsuario: u, screen: 'pin', error: null });
+}
+
+async function handleConfirmPin(pin) {
+  if (!pin || pin.length !== 4) { setState({ error: 'Digite os 4 dígitos da senha.' }); return; }
+  if (pin !== state.selectedUsuario.pin) { setState({ error: 'Senha incorreta. Tente novamente.' }); return; }
+  const user = { id: state.selectedUsuario.id, nome: state.selectedUsuario.nome, perfil: state.selectedUsuario.perfil };
+  if (user.perfil === 'supervisor') {
+    setState({ currentUser: user, screen: 'supervisor_home', error: null, supervisorTab: 'checklists' });
+    await loadAllChecklists('pendente');
+  } else {
+    setState({ currentUser: user, screen: 'setup', error: null, itens: initItens(user.perfil) });
+    await loadVeiculos();
+    if (user.perfil !== 'motorista') {
+      const { data } = await supabaseClient.from('usuarios').select('nome').eq('perfil', 'motorista').eq('ativo', true);
+      setState({ motoristas: data || [] });
+    }
+  }
+}
+
+function handleLogout() {
+  setState({
+    screen: 'login', currentUser: null, selectedUsuario: null, selectedVeiculo: null,
+    tacografo: '', km: '', tipoRota: 'saida', rota: '', motoristaRelacionado: '', motivo: '',
+    abastecido: null, itens: [], observacoesGerais: '', fotos: [], fotoPreviews: [],
+    error: null, history: [], usuarios: [], allChecklists: [], selectedDetail: null,
+    equipeForm: null, veiculoForm: null
+  });
+}
+
+// ============================================================
+// AÇÕES - CHECKLIST (motorista/mecânico/lavador)
+// ============================================================
+function handleStartChecklist() {
+  const veiculoId = document.getElementById('sel-veiculo').value;
+  const v = state.veiculos.find(x => x.id === veiculoId);
+  if (!v) { setState({ error: 'Selecione um veículo.' }); return; }
+  const tacografo = document.getElementById('input-tacografo') ? document.getElementById('input-tacografo').value : '';
+  const km = document.getElementById('input-km') ? document.getElementById('input-km').value : '';
+  const rota = document.getElementById('input-rota') ? document.getElementById('input-rota').value : '';
+  const motoristaRel = document.getElementById('sel-motorista-rel') ? document.getElementById('sel-motorista-rel').value : '';
+  const motivo = document.getElementById('input-motivo') ? document.getElementById('input-motivo').value : '';
+  setState({
+    selectedVeiculo: v, tacografo, km, rota, motoristaRelacionado: motoristaRel, motivo,
+    screen: 'checklist', error: null
+  });
+}
+
+function setItemStatus(index, status) {
+  const itens = [...state.itens];
+  itens[index] = { ...itens[index], status };
+  setState({ itens });
+}
+
+function addFotos(fileList) {
+  const files = Array.from(fileList);
+  const previews = files.map(f => URL.createObjectURL(f));
+  setState({ fotos: [...state.fotos, ...files], fotoPreviews: [...state.fotoPreviews, ...previews] });
+}
+
+async function uploadFoto(file) {
+  const ext = (file.name.split('.').pop() || 'jpg');
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await supabaseClient.storage.from('checklist-fotos').upload(path, file);
+  if (error) throw error;
+  const { data } = supabaseClient.storage.from('checklist-fotos').getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function handleSubmitChecklist() {
+  const semStatus = state.itens.filter(i => !i.status);
+  if (semStatus.length > 0) {
+    setState({ error: `Marque o status de todos os itens (falta: "${semStatus[0].item}").` });
+    return;
+  }
+  setState({ submitting: true, error: null });
+  try {
+    const fotoUrls = [];
+    for (const f of state.fotos) fotoUrls.push(await uploadFoto(f));
+    const payload = {
+      usuario_id: state.currentUser.id,
+      usuario_nome: state.currentUser.nome,
+      veiculo_id: state.selectedVeiculo.id,
+      veiculo_placa: state.selectedVeiculo.placa,
+      perfil: state.currentUser.perfil,
+      tacografo: state.tacografo || null,
+      km: state.km ? Number(state.km) : null,
+      motorista_relacionado: state.motoristaRelacionado || null,
+      itens: state.itens.map(i => ({ secao: i.secao, item: i.item, status: i.status })),
+      observacoes_gerais: state.observacoesGerais || null,
+      fotos: fotoUrls,
+      status: 'pendente'
+    };
+    if (state.currentUser.perfil === 'motorista') {
+      payload.tipo_rota = state.tipoRota;
+      payload.rota = state.rota || null;
+    }
+    if (state.currentUser.perfil === 'mecanico') {
+      payload.motivo = state.motivo || null;
+      payload.abastecido = state.abastecido;
+    }
+    const { error } = await supabaseClient.from('checklists').insert(payload);
+    if (error) throw error;
+    setState({ submitting: false, screen: 'success' });
+  } catch (e) {
+    setState({ submitting: false, error: 'Erro ao enviar checklist: ' + e.message });
+  }
+}
+
+async function handleShowHistory() {
+  setState({ screen: 'history' });
+  await loadHistory(state.currentUser.id);
+}
+
+function handleNewChecklist() {
+  setState({
+    screen: 'setup', selectedVeiculo: null, tacografo: '', km: '', rota: '',
+    motoristaRelacionado: '', motivo: '', abastecido: null, observacoesGerais: '',
+    fotos: [], fotoPreviews: [], itens: initItens(state.currentUser.perfil), error: null
+  });
+}
+
+// ============================================================
+// AÇÕES - SUPERVISOR
+// ============================================================
+async function switchSupervisorTab(tab) {
+  setState({ supervisorTab: tab, error: null });
+  if (tab === 'checklists') await loadAllChecklists(state.checklistFilter);
+  if (tab === 'equipe') await loadAllUsuariosAdmin();
+  if (tab === 'veiculos') await loadAllVeiculosAdmin();
+}
+
+async function setChecklistFilter(f) {
+  setState({ checklistFilter: f });
+  await loadAllChecklists(f);
+}
+
+function openChecklistDetail(id) {
+  const c = state.allChecklists.find(x => x.id === id);
+  setState({ selectedDetail: c, screen: 'checklist_detail' });
+}
+
+async function handleApproveChecklist(id) {
+  const { error } = await supabaseClient.from('checklists').update({
+    status: 'aprovado', aprovado_por: state.currentUser.nome, aprovado_em: new Date().toISOString()
+  }).eq('id', id);
+  if (error) { setState({ error: 'Erro ao aprovar: ' + error.message }); return; }
+  setState({ screen: 'supervisor_home' });
+  await loadAllChecklists(state.checklistFilter);
+}
+
+function openEquipeForm(usuario) {
+  setState({ equipeForm: usuario ? { ...usuario } : { id: null, nome: '', pin: '', perfil: 'motorista', ativo: true } });
+}
+
+async function saveEquipeForm() {
+  const f = state.equipeForm;
+  if (!f.nome || !f.pin || f.pin.length !== 4) { setState({ error: 'Preencha nome e uma senha de 4 dígitos.' }); return; }
+  let error;
+  if (f.id) {
+    ({ error } = await supabaseClient.from('usuarios').update({ nome: f.nome, pin: f.pin, perfil: f.perfil, ativo: f.ativo }).eq('id', f.id));
+  } else {
+    ({ error } = await supabaseClient.from('usuarios').insert({ nome: f.nome, pin: f.pin, perfil: f.perfil, ativo: f.ativo }));
+  }
+  if (error) { setState({ error: 'Erro ao salvar: ' + error.message }); return; }
+  setState({ equipeForm: null, error: null });
+  await loadAllUsuariosAdmin();
+}
+
+async function toggleUsuarioAtivo(u) {
+  const { error } = await supabaseClient.from('usuarios').update({ ativo: !u.ativo }).eq('id', u.id);
+  if (error) { setState({ error: 'Erro: ' + error.message }); return; }
+  await loadAllUsuariosAdmin();
+}
+
+function openVeiculoForm(veiculo) {
+  setState({ veiculoForm: veiculo ? { ...veiculo } : { id: null, placa: '', modelo: '', tipo: '', ativo: true } });
+}
+
+async function saveVeiculoForm() {
+  const f = state.veiculoForm;
+  if (!f.placa) { setState({ error: 'Preencha a placa.' }); return; }
+  let error;
+  if (f.id) {
+    ({ error } = await supabaseClient.from('veiculos').update({ placa: f.placa, modelo: f.modelo, tipo: f.tipo, ativo: f.ativo }).eq('id', f.id));
+  } else {
+    ({ error } = await supabaseClient.from('veiculos').insert({ placa: f.placa, modelo: f.modelo, tipo: f.tipo, ativo: f.ativo }));
+  }
+  if (error) { setState({ error: 'Erro ao salvar: ' + error.message }); return; }
+  setState({ veiculoForm: null, error: null });
+  await loadAllVeiculosAdmin();
+}
+
+async function toggleVeiculoAtivo(v) {
+  const { error } = await supabaseClient.from('veiculos').update({ ativo: !v.ativo }).eq('id', v.id);
+  if (error) { setState({ error: 'Erro: ' + error.message }); return; }
+  await loadAllVeiculosAdmin();
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+function render() {
+  const s = state;
+  let html = '';
+  html += `<header class="topbar"><div class="row1">
+    <div class="brand"><span class="clip"></span>ChecklistOP</div>
+    ${s.currentUser ? `<div class="user-chip">${s.currentUser.nome}<br>${PERFIL_LABELS[s.currentUser.perfil]} · <button onclick="handleLogout()">sair</button></div>` : ''}
+  </div></header>`;
+
+  html += `<main><div class="screen">`;
+  if (s.error) html += `<div class="error-msg">${s.error}</div>`;
+
+  const renderers = {
+    login: renderLogin, pin: renderPin, setup: renderSetup, checklist: renderChecklist,
+    success: renderSuccess, history: renderHistory, supervisor_home: renderSupervisorHome,
+    checklist_detail: renderChecklistDetail
+  };
+  html += (renderers[s.screen] || renderLogin)();
+  html += `</div></main>`;
+  app.innerHTML = html;
+}
+
+function renderLogin() {
+  if (state.usuarios.length === 0) {
+    setTimeout(loadUsuarios, 0);
+    return `<div class="loading-msg">Carregando usuários...</div>`;
+  }
+  const options = state.usuarios.map(u => `<option value="${u.id}">${u.nome} (${PERFIL_LABELS[u.perfil]})</option>`).join('');
+  return `
+    <h1 class="title">Fazer login</h1>
+    <p class="subtitle">Escolha seu nome na lista para continuar.</p>
+    <label class="field-label">Seu nome</label>
+    <select onchange="handlePickUser(this.value)">
+      <option value="">Selecione...</option>${options}
+    </select>
+  `;
+}
+
+function renderPin() {
+  return `
+    <h1 class="title">Olá, ${state.selectedUsuario.nome.split(' ')[0]}</h1>
+    <p class="subtitle">Digite sua senha de 4 dígitos.</p>
+    <label class="field-label">Senha</label>
+    <input class="pin-input" id="pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="••••" autofocus>
+    <button class="btn-primary" onclick="handleConfirmPin(document.getElementById('pin-input').value)">Entrar</button>
+    <button class="btn-secondary" onclick="setState({screen:'login', error:null})">Voltar</button>
+  `;
+}
+
+function renderSetup() {
+  if (state.veiculos.length === 0) return `<div class="loading-msg">Carregando veículos...</div>`;
+  const perfil = state.currentUser.perfil;
+  const vOptions = state.veiculos.map(v => `<option value="${v.id}">${v.placa}${v.modelo ? ' — ' + v.modelo : ''}</option>`).join('');
+  let extra = '';
+
+  if (perfil === 'motorista') {
+    extra += `
+      <label class="field-label">Tipo de checklist</label>
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn ${state.tipoRota === 'saida' ? 'active' : ''}" onclick="setState({tipoRota:'saida'})">Saída</button>
+        <button type="button" class="toggle-btn ${state.tipoRota === 'retorno' ? 'active' : ''}" onclick="setState({tipoRota:'retorno'})">Retorno</button>
+      </div>
+      <label class="field-label">Rota (opcional)</label>
+      <input type="text" id="input-rota" placeholder="Ex: Rota Norte">
+    `;
+  } else {
+    const motOptions = state.motoristas.map(m => `<option value="${m.nome}">${m.nome}</option>`).join('');
+    extra += `
+      <label class="field-label">Motorista do veículo (opcional)</label>
+      <select id="sel-motorista-rel"><option value="">Selecione...</option>${motOptions}</select>
+    `;
+    if (perfil === 'mecanico') {
+      extra += `
+        <label class="field-label">Motivo / reclamação do motorista (opcional)</label>
+        <textarea id="input-motivo" placeholder="Ex: motorista reclamou de barulho no freio..."></textarea>
+      `;
+    }
+  }
+
+  return `
+    <h1 class="title">Novo checklist</h1>
+    <p class="subtitle">Preencha os dados do veículo antes de começar.</p>
+    <label class="field-label">Veículo (placa)</label>
+    <select id="sel-veiculo"><option value="">Selecione...</option>${vOptions}</select>
+    <label class="field-label">Tacógrafo (opcional)</label>
+    <input type="text" id="input-tacografo" placeholder="Número do tacógrafo">
+    <label class="field-label">KM do veículo (opcional)</label>
+    <input type="number" id="input-km" placeholder="Ex: 152340">
+    ${extra}
+    <button class="btn-primary" onclick="handleStartChecklist()">Iniciar checklist</button>
+    <button class="btn-secondary" onclick="handleShowHistory()">Ver meu histórico</button>
+  `;
+}
+
+function renderChecklist() {
+  const perfil = state.currentUser.perfil;
+  const tpl = TEMPLATES[perfil];
+  const marcados = state.itens.filter(i => i.status).length;
+  const total = state.itens.length;
+  let secNum = 0;
+
+  const sectionsHtml = tpl.sections.map(([secao, lista]) => {
+    secNum++;
+    const rows = lista.map(itemNome => {
+      const idx = state.itens.findIndex(i => i.secao === secao && i.item === itemNome);
+      const it = state.itens[idx];
+      const btns = tpl.statusSet.map(st =>
+        `<button class="status-btn ${it.status === st ? 'active' : ''}" data-s="${st}" onclick="setItemStatus(${idx}, '${st}')">${STATUS_LABELS[st]}</button>`
+      ).join('');
+      return `<div class="item-row ${it.status === 'nok' || it.status === 'nao' ? 'status-nok' : ''}">
+        <div class="item-label">${itemNome}</div>
+        <div class="status-btns">${btns}</div>
+      </div>`;
+    }).join('');
+    return `<div class="section-block">
+      <div class="section-head"><span class="section-num">${String(secNum).padStart(2, '0')}</span><span class="section-name">${secao}</span></div>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  const abastecimentoHtml = perfil === 'mecanico' ? `
+    <div class="section-block">
+      <div class="section-head"><span class="section-num">${String(secNum + 1).padStart(2, '0')}</span><span class="section-name">Abastecimento</span></div>
+      <p class="subtitle" style="margin-bottom:12px;">Confirme apenas se você é o responsável autorizado pelo abastecimento.</p>
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn ${state.abastecido === true ? 'active' : ''}" onclick="setState({abastecido:true})">Sim, abasteceu</button>
+        <button type="button" class="toggle-btn ${state.abastecido === false ? 'active' : ''}" onclick="setState({abastecido:false})">Não abasteceu</button>
+      </div>
+    </div>
+  ` : '';
+
+  const fotosHtml = `
+    <div class="section-block">
+      <label class="field-label">${perfil === 'mecanico' ? 'O que foi feito / peças trocadas' : 'Observações'}</label>
+      <textarea placeholder="Descreva aqui os detalhes, problemas encontrados ou serviços realizados..." oninput="state.observacoesGerais=this.value">${state.observacoesGerais}</textarea>
+      <label class="field-label">Fotos (opcional)</label>
+      <div class="photo-strip">${state.fotoPreviews.map(p => `<img class="photo-thumb" src="${p}">`).join('')}</div>
+      <label class="photo-add-btn">📷 Adicionar foto
+        <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addFotos(this.files)">
+      </label>
+    </div>
+  `;
+
+  return `
+    <h1 class="title">${PERFIL_LABELS[perfil]} — ${state.selectedVeiculo.placa}</h1>
+    <p class="subtitle">Marque o status de cada item da vistoria.</p>
+    ${sectionsHtml}
+    ${abastecimentoHtml}
+    ${fotosHtml}
+    <div class="sticky-footer">
+      <div class="progress-pill">${marcados} de ${total} itens marcados</div>
+      <button class="btn-primary" ${state.submitting ? 'disabled' : ''} onclick="handleSubmitChecklist()">
+        ${state.submitting ? 'Enviando...' : 'Enviar checklist'}
+      </button>
+    </div>
+  `;
+}
+
+function renderSuccess() {
+  return `
+    <div class="stamp-wrap">
+      <div class="stamp">CONCLUÍDO</div>
+      <div class="stamp-detail">Checklist do veículo ${state.selectedVeiculo.placa} enviado. Aguardando aprovação do supervisor.</div>
+      <button class="btn-primary" onclick="handleNewChecklist()">Novo checklist</button>
+      <button class="btn-secondary" onclick="handleShowHistory()">Ver histórico</button>
+    </div>
+  `;
+}
+
+function renderHistory() {
+  if (state.history.length === 0) {
+    return `<h1 class="title">Seu histórico</h1><div class="empty-msg">Nenhum checklist enviado ainda.</div>
+      <button class="btn-secondary" onclick="setState({screen:'setup'})">Voltar</button>`;
+  }
+  const items = state.history.map(h => {
+    const nok = (h.itens || []).filter(i => i.status === 'nok' || i.status === 'nao').length;
+    return `<div class="list-card">
+      <div class="list-top"><span>${formatDate(h.criado_em)}</span><span class="badge ${h.status}">${h.status === 'aprovado' ? 'Aprovado' : 'Pendente'}</span></div>
+      <div class="list-placa">${h.veiculo_placa}</div>
+      ${nok > 0 ? `<div style="color:var(--nok); font-size:13px; margin-top:4px;">⚠ ${nok} item(ns) com problema</div>` : `<div style="color:var(--ok); font-size:13px; margin-top:4px;">✓ Tudo OK</div>`}
+    </div>`;
+  }).join('');
+  return `<h1 class="title">Seu histórico</h1><p class="subtitle">Últimos checklists enviados por você.</p>${items}
+    <button class="btn-secondary" onclick="setState({screen:'setup'})">Voltar</button>`;
+}
+
+function renderSupervisorHome() {
+  const tabs = `<div class="tabs">
+    <button class="tab-btn ${state.supervisorTab === 'checklists' ? 'active' : ''}" onclick="switchSupervisorTab('checklists')">Checklists</button>
+    <button class="tab-btn ${state.supervisorTab === 'equipe' ? 'active' : ''}" onclick="switchSupervisorTab('equipe')">Equipe</button>
+    <button class="tab-btn ${state.supervisorTab === 'veiculos' ? 'active' : ''}" onclick="switchSupervisorTab('veiculos')">Veículos</button>
+  </div>`;
+
+  if (state.supervisorTab === 'checklists') return tabs + renderSupervisorChecklists();
+  if (state.supervisorTab === 'equipe') return tabs + renderSupervisorEquipe();
+  if (state.supervisorTab === 'veiculos') return tabs + renderSupervisorVeiculos();
+  return tabs;
+}
+
+function renderSupervisorChecklists() {
+  const filters = `<div class="filter-row">
+    <button class="filter-btn ${state.checklistFilter === 'pendente' ? 'active' : ''}" onclick="setChecklistFilter('pendente')">Pendentes</button>
+    <button class="filter-btn ${state.checklistFilter === 'aprovado' ? 'active' : ''}" onclick="setChecklistFilter('aprovado')">Aprovados</button>
+    <button class="filter-btn ${state.checklistFilter === 'todos' ? 'active' : ''}" onclick="setChecklistFilter('todos')">Todos</button>
+  </div>`;
+  if (state.allChecklists.length === 0) return filters + `<div class="empty-msg">Nenhum checklist encontrado.</div>`;
+  const items = state.allChecklists.map(h => {
+    const nok = (h.itens || []).filter(i => i.status === 'nok' || i.status === 'nao').length;
+    return `<div class="list-card" onclick="openChecklistDetail('${h.id}')">
+      <div class="list-top"><span>${formatDate(h.criado_em)}</span><span class="badge ${h.status}">${h.status === 'aprovado' ? 'Aprovado' : 'Pendente'}</span></div>
+      <div class="list-placa">${h.veiculo_placa} <span class="badge ${h.perfil}">${PERFIL_LABELS[h.perfil]}</span></div>
+      <div style="font-size:13px; color:var(--muted); margin-top:4px;">${h.usuario_nome}${nok > 0 ? ` · ⚠ ${nok} problema(s)` : ' · tudo OK'}</div>
+    </div>`;
+  }).join('');
+  return filters + items;
+}
+
+function renderChecklistDetail() {
+  const h = state.selectedDetail;
+  if (!h) return `<div class="empty-msg">Checklist não encontrado.</div>`;
+  const bySecao = {};
+  (h.itens || []).forEach(i => { (bySecao[i.secao] = bySecao[i.secao] || []).push(i); });
+  const sectionsHtml = Object.keys(bySecao).map(secao => `
+    <div class="detail-section">
+      <div class="section-head"><span class="section-name">${secao}</span></div>
+      ${bySecao[secao].map(i => `<div class="detail-item-row"><span>${i.item}</span><span class="detail-status-tag ${i.status}">${STATUS_LABELS[i.status] || i.status}</span></div>`).join('')}
+    </div>
+  `).join('');
+
+  const metaHtml = `<div class="meta-grid">
+    <div class="meta-cell"><div class="k">Quem preencheu</div><div class="v">${h.usuario_nome}</div></div>
+    <div class="meta-cell"><div class="k">Perfil</div><div class="v">${PERFIL_LABELS[h.perfil]}</div></div>
+    <div class="meta-cell"><div class="k">Data</div><div class="v">${formatDate(h.criado_em)}</div></div>
+    <div class="meta-cell"><div class="k">KM</div><div class="v">${h.km || '—'}</div></div>
+    ${h.tacografo ? `<div class="meta-cell"><div class="k">Tacógrafo</div><div class="v">${h.tacografo}</div></div>` : ''}
+    ${h.rota ? `<div class="meta-cell"><div class="k">Rota</div><div class="v">${h.rota} (${h.tipo_rota === 'retorno' ? 'Retorno' : 'Saída'})</div></div>` : ''}
+    ${h.motorista_relacionado ? `<div class="meta-cell"><div class="k">Motorista</div><div class="v">${h.motorista_relacionado}</div></div>` : ''}
+    ${h.perfil === 'mecanico' ? `<div class="meta-cell"><div class="k">Abastecimento</div><div class="v">${h.abastecido === true ? 'Sim' : h.abastecido === false ? 'Não' : '—'}</div></div>` : ''}
+  </div>`;
+
+  const fotosHtml = (h.fotos && h.fotos.length > 0) ? `
+    <div class="detail-section"><label class="field-label">Fotos</label>
+      <div class="photo-strip">${h.fotos.map(url => `<img class="photo-thumb" src="${url}">`).join('')}</div>
+    </div>` : '';
+
+  return `
+    <h1 class="title">${h.veiculo_placa}</h1>
+    <p class="subtitle">${h.motivo ? h.motivo : (h.observacoes_gerais ? '' : 'Detalhes do checklist enviado.')}</p>
+    ${metaHtml}
+    ${h.observacoes_gerais ? `<div class="detail-section"><label class="field-label">Observações</label><div class="form-card">${h.observacoes_gerais}</div></div>` : ''}
+    ${sectionsHtml}
+    ${fotosHtml}
+    ${h.status === 'pendente' ? `<button class="btn-primary" onclick="handleApproveChecklist('${h.id}')">Aprovar checklist</button>` : `<p class="subtitle">Aprovado por ${h.aprovado_por} em ${formatDate(h.aprovado_em)}</p>`}
+    <button class="btn-secondary" onclick="setState({screen:'supervisor_home'})">Voltar</button>
+  `;
+}
+
+function renderSupervisorEquipe() {
+  if (state.equipeForm) {
+    const f = state.equipeForm;
+    return `
+      <div class="form-card">
+        <label class="field-label">Nome</label>
+        <input type="text" value="${f.nome}" oninput="state.equipeForm.nome=this.value">
+        <label class="field-label">Senha (4 dígitos)</label>
+        <input type="text" maxlength="4" inputmode="numeric" value="${f.pin}" oninput="state.equipeForm.pin=this.value">
+        <label class="field-label">Perfil</label>
+        <select onchange="state.equipeForm.perfil=this.value">
+          ${['motorista', 'mecanico', 'lavador', 'supervisor'].map(p => `<option value="${p}" ${f.perfil === p ? 'selected' : ''}>${PERFIL_LABELS[p]}</option>`).join('')}
+        </select>
+        <button class="btn-primary" onclick="saveEquipeForm()">Salvar</button>
+        <button class="btn-secondary" onclick="setState({equipeForm:null, error:null})">Cancelar</button>
+      </div>
+    `;
+  }
+  if (state.usuarios.length === 0) { setTimeout(loadAllUsuariosAdmin, 0); return `<div class="loading-msg">Carregando equipe...</div>`; }
+  const rows = state.usuarios.map(u => `
+    <div class="admin-row">
+      <div>
+        <div class="name">${u.nome} ${!u.ativo ? '<span class="badge" style="background:#ECEAE2;color:var(--muted);">inativo</span>' : ''}</div>
+        <div class="sub">${PERFIL_LABELS[u.perfil]} · PIN ${u.pin}</div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" onclick='openEquipeForm(${JSON.stringify(u)})'>Editar</button>
+        <button class="icon-btn ${u.ativo ? 'danger' : ''}" onclick='toggleUsuarioAtivo(${JSON.stringify(u)})'>${u.ativo ? 'Desativar' : 'Ativar'}</button>
+      </div>
+    </div>
+  `).join('');
+  return `<button class="fab" onclick="openEquipeForm(null)">+ Novo membro da equipe</button>${rows}`;
+}
+
+function renderSupervisorVeiculos() {
+  if (state.veiculoForm) {
+    const f = state.veiculoForm;
+    return `
+      <div class="form-card">
+        <label class="field-label">Placa</label>
+        <input type="text" value="${f.placa}" oninput="state.veiculoForm.placa=this.value.toUpperCase()">
+        <label class="field-label">Modelo</label>
+        <input type="text" value="${f.modelo || ''}" oninput="state.veiculoForm.modelo=this.value">
+        <label class="field-label">Tipo</label>
+        <input type="text" value="${f.tipo || ''}" placeholder="Ex: julieta, padrão, agregado" oninput="state.veiculoForm.tipo=this.value">
+        <button class="btn-primary" onclick="saveVeiculoForm()">Salvar</button>
+        <button class="btn-secondary" onclick="setState({veiculoForm:null, error:null})">Cancelar</button>
+      </div>
+    `;
+  }
+  if (state.veiculos.length === 0) { setTimeout(loadAllVeiculosAdmin, 0); return `<div class="loading-msg">Carregando veículos...</div>`; }
+  const rows = state.veiculos.map(v => `
+    <div class="admin-row">
+      <div>
+        <div class="name">${v.placa} ${!v.ativo ? '<span class="badge" style="background:#ECEAE2;color:var(--muted);">inativo</span>' : ''}</div>
+        <div class="sub">${v.modelo || '—'} ${v.tipo ? '· ' + v.tipo : ''}</div>
+      </div>
+      <div class="actions">
+        <button class="icon-btn" onclick='openVeiculoForm(${JSON.stringify(v)})'>Editar</button>
+        <button class="icon-btn ${v.ativo ? 'danger' : ''}" onclick='toggleVeiculoAtivo(${JSON.stringify(v)})'>${v.ativo ? 'Desativar' : 'Ativar'}</button>
+      </div>
+    </div>
+  `).join('');
+  return `<button class="fab" onclick="openVeiculoForm(null)">+ Novo veículo</button>${rows}`;
+}
+
+render();
+</script>
+</body>
+</html>
