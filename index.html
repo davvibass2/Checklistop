@@ -306,6 +306,7 @@ const TEMPLATES = {
     problemStatus: 'nok',
     requireReasonOnProblem: true,
     usesRota: true,
+    requireKm: true,
     sections: [
       ['Motor', ['Óleo motor', 'Filtro de ar', 'Correias', 'Nível de água']],
       ['Suspensão', ['Amortecedor', 'Molas', 'Jumelo traseiro', 'Jumelo dianteiro']],
@@ -322,7 +323,8 @@ const TEMPLATES = {
     statusSet: ['ok', 'nok', 'na'],
     problemStatus: 'nok',
     requireReasonOnProblem: true,
-    usesRota: true,
+    usesRota: false,
+    requireKm: true,
     sections: [
       ['Pneus', ['Dianteiro', 'Traseiro', 'Calibragem', 'Estepe']],
       ['Freios', ['Lubrificação', 'Freio dianteiro', 'Freio traseiro', 'Tambores', 'Lonas']],
@@ -337,6 +339,7 @@ const TEMPLATES = {
     problemStatus: 'nao',
     requireReasonOnProblem: false,
     usesRota: false,
+    requireKm: false,
     sections: [
       ['Limpeza do Veículo', ['Cabine externa', 'Para-brisa/retrovisores', 'Tanque de leite']],
       ['Extra', ['Lavagem geral', 'Limpeza caixa de gordura (2x/semana)']]
@@ -543,10 +546,8 @@ function handleStartChecklist() {
   const motoristaRel = document.getElementById('sel-motorista-rel') ? document.getElementById('sel-motorista-rel').value : '';
   const motivo = document.getElementById('input-motivo') ? document.getElementById('input-motivo').value : '';
 
-  if (tpl.usesRota) {
-    if (!km || Number(km) <= 0) { setState({ error: 'Informe a quilometragem do veículo.' }); return; }
-    if (!state.selectedRota) { setState({ error: 'Selecione a rota.' }); return; }
-  }
+  if (tpl.requireKm && (!km || Number(km) <= 0)) { setState({ error: 'Informe a quilometragem do veículo.' }); return; }
+  if (tpl.usesRota && !state.selectedRota) { setState({ error: 'Selecione a rota.' }); return; }
 
   setState({
     selectedVeiculo: v, tacografo, km, motoristaRelacionado: motoristaRel, motivo,
@@ -898,7 +899,7 @@ function renderSetup() {
     <select id="sel-veiculo"><option value="">Selecione...</option>${vOptions}</select>
     <label class="field-label">Tacógrafo (opcional)</label>
     <input type="text" id="input-tacografo" placeholder="Número do tacógrafo">
-    <label class="field-label">KM do veículo${tpl.usesRota ? '' : ' (opcional)'}</label>
+    <label class="field-label">KM do veículo${tpl.requireKm ? '' : ' (opcional)'}</label>
     <input type="number" id="input-km" placeholder="Ex: 152340">
     ${extra}
     ${rotaBlock}
