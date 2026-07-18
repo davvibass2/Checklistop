@@ -390,6 +390,7 @@ let state = {
   selectedUsuario: null,
   currentUser: null,
   selectedVeiculo: null,
+  setupVeiculoId: '',
   tacografo: '',
   km: '',
   tipoRota: 'saida',
@@ -647,7 +648,7 @@ function handleLogout() {
     abastecido: null, itens: [], observacoesGerais: '', fotos: [], fotoPreviews: [],
     error: null, history: [], usuarios: [], allChecklists: [], selectedDetail: null,
     equipeForm: null, veiculoForm: null, rotaForm: null, rotas: [], rotaQuery: '',
-    selectedRota: null, loginQuery: ''
+    selectedRota: null, loginQuery: '', setupVeiculoId: ''
   });
 }
 
@@ -657,21 +658,14 @@ function handleLogout() {
 function handleStartChecklist() {
   const perfil = state.currentUser.perfil;
   const tpl = TEMPLATES[perfil];
-  const veiculoId = document.getElementById('sel-veiculo').value;
-  const v = state.veiculos.find(x => x.id === veiculoId);
+  const v = state.veiculos.find(x => x.id === state.setupVeiculoId);
   if (!v) { setState({ error: 'Selecione um veículo.' }); return; }
-  const tacografo = document.getElementById('input-tacografo') ? document.getElementById('input-tacografo').value : '';
-  const km = document.getElementById('input-km') ? document.getElementById('input-km').value : '';
-  const motoristaRel = document.getElementById('sel-motorista-rel') ? document.getElementById('sel-motorista-rel').value : '';
-  const motivo = document.getElementById('input-motivo') ? document.getElementById('input-motivo').value : '';
+  const km = state.km;
 
   if (tpl.requireKm && (!km || Number(km) <= 0)) { setState({ error: 'Informe a quilometragem do veículo.' }); return; }
   if (tpl.usesRota && !state.selectedRota) { setState({ error: 'Selecione a rota.' }); return; }
 
-  setState({
-    selectedVeiculo: v, tacografo, km, motoristaRelacionado: motoristaRel, motivo,
-    screen: 'checklist', error: null
-  });
+  setState({ selectedVeiculo: v, screen: 'checklist', error: null });
 }
 
 function setItemStatus(index, status) {
@@ -776,7 +770,7 @@ async function handleShowHistory() {
 
 function handleNewChecklist() {
   setState({
-    screen: 'setup', selectedVeiculo: null, tacografo: '', km: '', selectedRota: null, rotaQuery: '',
+    screen: 'setup', selectedVeiculo: null, setupVeiculoId: '', tacografo: '', km: '', selectedRota: null, rotaQuery: '',
     motoristaRelacionado: '', motivo: '', abastecido: null, observacoesGerais: '',
     fotos: [], fotoPreviews: [], itens: initItens(state.currentUser.perfil), error: null
   });
@@ -978,7 +972,7 @@ function renderSetup() {
   if (state.veiculos.length === 0) return `<div class="loading-msg">Carregando veículos...</div>`;
   const perfil = state.currentUser.perfil;
   const tpl = TEMPLATES[perfil];
-  const vOptions = state.veiculos.map(v => `<option value="${v.id}">${v.placa}${v.modelo ? ' — ' + v.modelo : ''}</option>`).join('');
+  const vOptions = state.veiculos.map(v => `<option value="${v.id}" ${v.id === state.setupVeiculoId ? 'selected' : ''}>${v.placa}${v.modelo ? ' — ' + v.modelo : ''}</option>`).join('');
   let extra = '';
 
   if (perfil === 'motorista') {
@@ -990,15 +984,15 @@ function renderSetup() {
       </div>
     `;
   } else {
-    const motOptions = state.motoristas.map(m => `<option value="${m.nome}">${m.nome}</option>`).join('');
+    const motOptions = state.motoristas.map(m => `<option value="${m.nome}" ${m.nome === state.motoristaRelacionado ? 'selected' : ''}>${m.nome}</option>`).join('');
     extra += `
       <label class="field-label">Motorista do veículo (opcional)</label>
-      <select id="sel-motorista-rel"><option value="">Selecione...</option>${motOptions}</select>
+      <select id="sel-motorista-rel" onchange="state.motoristaRelacionado=this.value"><option value="">Selecione...</option>${motOptions}</select>
     `;
     if (perfil === 'mecanico') {
       extra += `
         <label class="field-label">Motivo / reclamação do motorista (opcional)</label>
-        <textarea id="input-motivo" placeholder="Ex: motorista reclamou de barulho no freio..."></textarea>
+        <textarea id="input-motivo" placeholder="Ex: motorista reclamou de barulho no freio..." oninput="state.motivo=this.value">${state.motivo}</textarea>
       `;
     }
   }
@@ -1029,11 +1023,11 @@ function renderSetup() {
     <h1 class="title">Novo checklist</h1>
     <p class="subtitle">Preencha os dados do veículo antes de começar.</p>
     <label class="field-label">Veículo (placa)</label>
-    <select id="sel-veiculo"><option value="">Selecione...</option>${vOptions}</select>
+    <select id="sel-veiculo" onchange="state.setupVeiculoId=this.value"><option value="">Selecione...</option>${vOptions}</select>
     <label class="field-label">Tacógrafo (opcional)</label>
-    <input type="text" id="input-tacografo" placeholder="Número do tacógrafo">
+    <input type="text" id="input-tacografo" placeholder="Número do tacógrafo" value="${state.tacografo}" oninput="state.tacografo=this.value">
     <label class="field-label">KM do veículo${tpl.requireKm ? '' : ' (opcional)'}</label>
-    <input type="number" id="input-km" placeholder="Ex: 152340">
+    <input type="number" id="input-km" placeholder="Ex: 152340" value="${state.km}" oninput="state.km=this.value">
     ${extra}
     ${rotaBlock}
     <button class="btn-primary" onclick="handleStartChecklist()">Iniciar checklist</button>
