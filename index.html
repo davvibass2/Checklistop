@@ -767,6 +767,7 @@ async function handleSubmitChecklist() {
     if (perfil === 'mecanico') {
       payload.motivo = state.motivo || null;
       payload.abastecido = state.abastecido;
+      payload.tipo_manutencao = state.resolvendoManutencaoId ? 'corretivo' : 'preventivo';
     }
     const { data: inserted, error } = await supabaseClient.from('checklists').insert(payload).select().single();
     if (error) throw error;
@@ -869,19 +870,31 @@ async function handleApproveChecklist(id) {
   }).eq('id', id);
   if (error) { setState({ error: 'Erro ao aprovar: ' + error.message }); return; }
 
-  const h = state.selectedDetail;
-  if (h && h.id === id && h.perfil === 'motorista') {
-    const problemas = (h.itens || []).filter(i => i.status === 'nok').map(i => ({ secao: i.secao, item: i.item, motivo: i.motivo || '' }));
-    if (problemas.length > 0) {
-      await supabaseClient.from('manutencoes').insert({
-        veiculo_id: h.veiculo_id, veiculo_placa: h.veiculo_placa,
-        origem_checklist_id: h.id, origem_usuario_nome: h.usuario_nome,
-        itens: problemas, status: 'pendente'
-      });
-    }
+  if (state.selectedDetail && state.selectedDetail.id === id) {
+    setState({ selectedDetail: { ...state.selectedDetail, status: 'aprovado', aprovado_por: state.currentUser.nome, aprovado_em: new Date().toISOString() } });
   }
+  await loadAllChecklists(state.checklistFilter);
+}
 
-  setState({ screen: 'supervisor_home' });
+async function handleEncaminharMecanico(id) {
+  const h = state.selectedDetail;
+  if (!h || h.id !== id) return;
+  const problemas = (h.itens || []).filter(i => i.status === 'nok').map(i => ({ secao: i.secao, item: i.item, motivo: i.motivo || '' }));
+  if (problemas.length === 0) return;
+
+  const { error: errMan } = await supabaseClient.from('manutencoes').insert({
+    veiculo_id: h.veiculo_id, veiculo_placa: h.veiculo_placa,
+    origem_checklist_id: h.id, origem_usuario_nome: h.usuario_nome,
+    itens: problemas, status: 'pendente'
+  });
+  if (errMan) { setState({ error: 'Erro ao encaminhar: ' + errMan.message }); return; }
+
+  const { error: errUpd } = await supabaseClient.from('checklists').update({
+    encaminhado_mecanico: true, encaminhado_em: new Date().toISOString()
+  }).eq('id', id);
+  if (errUpd) { setState({ error: 'Erro ao encaminhar: ' + errUpd.message }); return; }
+
+  setState({ selectedDetail: { ...h, encaminhado_mecanico: true, encaminhado_em: new Date().toISOString() } });
   await loadAllChecklists(state.checklistFilter);
 }
 
@@ -1229,7 +1242,7 @@ function renderSupervisorChecklists() {
     return `<div class="list-card" onclick="openChecklistDetail('${h.id}')">
       <div class="list-top"><span>${formatDate(h.criado_em)}</span><span class="badge ${h.status}">${h.status === 'aprovado' ? 'Aprovado' : 'Pendente'}</span></div>
       <div class="list-placa">${h.veiculo_placa} <span class="badge ${h.perfil}">${PERFIL_LABELS[h.perfil]}</span></div>
-      <div style="font-size:13px; color:var(--muted); margin-top:4px;">${h.usuario_nome}${nok > 0 ? ` · ⚠ ${nok} problema(s)` : ' · tudo OK'}</div>
+      <div style="font-size:13px; color:var(--muted); margin-top:4px;">${h.usuario_nome}${nok > 0 ? ` · ⚠ ${nok} problema(s)` : ' · tudo OK'}${h.encaminhado_mecanico ? ' · 🔧 encaminhado' : ''}${h.tipo_manutencao ? ` · ${h.tipo_manutencao === 'corretivo' ? 'corretivo' : 'preventivo'}` : ''}</div>
     </div>`;
   }).join('');
   return filters + items;
@@ -1385,6 +1398,7 @@ function renderChecklistDetail() {
     ${h.rota ? `<div class="meta-cell"><div class="k">Rota</div><div class="v">${h.rota}${h.tipo_rota ? ' (' + (h.tipo_rota === 'retorno' ? 'Retorno' : 'Saída') + ')' : ''}</div></div>` : ''}
     ${h.motorista_relacionado ? `<div class="meta-cell"><div class="k">Motorista</div><div class="v">${h.motorista_relacionado}</div></div>` : ''}
     ${h.perfil === 'mecanico' ? `<div class="meta-cell"><div class="k">Abastecimento</div><div class="v">${h.abastecido === true ? 'Sim' : h.abastecido === false ? 'Não' : '—'}</div></div>` : ''}
+    ${h.tipo_manutencao ? `<div class="meta-cell"><div class="k">Tipo</div><div class="v">${h.tipo_manutencao === 'corretivo' ? 'Corretivo' : 'Preventivo'}</div></div>` : ''}
   </div>`;
 
   const fotosHtml = (h.fotos && h.fotos.length > 0) ? `
@@ -1405,6 +1419,11 @@ function renderChecklistDetail() {
     <button class="btn-secondary no-print" onclick="window.print()">🖨 Imprimir este checklist</button>
     <button class="btn-secondary no-print" onclick="openEditChecklist()">✏️ Editar checklist</button>
     ${h.status === 'pendente' ? `<button class="btn-primary no-print" onclick="handleApproveChecklist('${h.id}')">Aprovar checklist</button>` : `<p class="subtitle">Aprovado por ${h.aprovado_por} em ${formatDate(h.aprovado_em)}</p>`}
+    ${(h.perfil === 'motorista' && (h.itens || []).some(i => i.status === 'nok')) ? (
+      h.encaminhado_mecanico
+        ? `<p class="subtitle">🔧 Encaminhado para os mecânicos em ${formatDate(h.encaminhado_em)}</p>`
+        : `<button class="btn-amber no-print" onclick="handleEncaminharMecanico('${h.id}')">🔧 Encaminhar para mecânico</button>`
+    ) : ''}
     <button class="icon-btn danger no-print" style="width:100%; padding:13px; margin-top:10px;" onclick="handleDeleteChecklist('${h.id}')">Excluir checklist (preenchido por engano)</button>
     <button class="btn-secondary no-print" onclick="setState({screen:'supervisor_home'})">Voltar</button>
   `;
