@@ -201,7 +201,7 @@
   .status-btn[data-s="na"].active { background: var(--na); color: #fff; border-color: var(--na); }
 
   .photo-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-  .photo-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1.5px solid var(--border); }
+  .photo-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; border: 1.5px solid var(--border); cursor: pointer; }
   .photo-add-btn {
     font-size: 12px; padding: 10px 14px; border-radius: 8px; border: 1.5px dashed var(--border);
     background: transparent; color: var(--muted); cursor: pointer; display: inline-block;
@@ -414,7 +414,11 @@ let state = {
   report: null,
   reportPeriod: 'mes_atual',
   reportCustomStart: '',
-  reportCustomEnd: ''
+  reportCustomEnd: '',
+  manutencoesPendentes: [],
+  resolvendoManutencaoId: null,
+  resolvendoManutencaoItens: null,
+  editingChecklist: null
 };
 
 const app = document.getElementById('app');
@@ -434,6 +438,12 @@ function initItens(perfil) {
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+async function loadManutencoesPendentes() {
+  const { data, error } = await supabaseClient.from('manutencoes').select('*').eq('status', 'pendente').order('criado_em', { ascending: false });
+  if (error) { setState({ error: 'Erro ao carregar pendências: ' + error.message }); return; }
+  setState({ manutencoesPendentes: data || [] });
 }
 
 async function loadUsuarios() {
@@ -638,6 +648,7 @@ async function handleConfirmPin(pin) {
       const { data } = await supabaseClient.from('usuarios').select('nome').eq('perfil', 'motorista').eq('ativo', true);
       setState({ motoristas: data || [] });
     }
+    if (user.perfil === 'mecanico') await loadManutencoesPendentes();
   }
 }
 
@@ -648,7 +659,8 @@ function handleLogout() {
     abastecido: null, itens: [], observacoesGerais: '', fotos: [], fotoPreviews: [],
     error: null, history: [], usuarios: [], allChecklists: [], selectedDetail: null,
     equipeForm: null, veiculoForm: null, rotaForm: null, rotas: [], rotaQuery: '',
-    selectedRota: null, loginQuery: '', setupVeiculoId: ''
+    selectedRota: null, loginQuery: '', setupVeiculoId: '',
+    manutencoesPendentes: [], resolvendoManutencaoId: null, resolvendoManutencaoItens: null
   });
 }
 
@@ -736,6 +748,7 @@ async function handleSubmitChecklist() {
       usuario_nome: state.currentUser.nome,
       veiculo_id: state.selectedVeiculo.id,
       veiculo_placa: state.selectedVeiculo.placa,
+      veiculo_modelo: state.selectedVeiculo.modelo || null,
       perfil: perfil,
       tacografo: state.tacografo || null,
       km: state.km ? Number(state.km) : null,
@@ -755,8 +768,15 @@ async function handleSubmitChecklist() {
       payload.motivo = state.motivo || null;
       payload.abastecido = state.abastecido;
     }
-    const { error } = await supabaseClient.from('checklists').insert(payload);
+    const { data: inserted, error } = await supabaseClient.from('checklists').insert(payload).select().single();
     if (error) throw error;
+
+    if (state.resolvendoManutencaoId) {
+      await supabaseClient.from('manutencoes').update({
+        status: 'resolvido', resolvido_checklist_id: inserted.id,
+        resolvido_por: state.currentUser.nome, resolvido_em: new Date().toISOString()
+      }).eq('id', state.resolvendoManutencaoId);
+    }
     setState({ submitting: false, screen: 'success' });
   } catch (e) {
     setState({ submitting: false, error: 'Erro ao enviar checklist: ' + e.message });
@@ -768,10 +788,24 @@ async function handleShowHistory() {
   await loadHistory(state.currentUser.id);
 }
 
+function handleResolverManutencao(manutencaoId) {
+  const m = state.manutencoesPendentes.find(x => x.id === manutencaoId);
+  if (!m) return;
+  const resumo = m.itens.map(i => `${i.secao} — ${i.item}${i.motivo ? ': ' + i.motivo : ''}`).join('\n');
+  setState({
+    screen: 'setup', setupVeiculoId: m.veiculo_id,
+    resolvendoManutencaoId: m.id, resolvendoManutencaoItens: m.itens,
+    motivo: `Problemas relatados pelo motorista (${m.origem_usuario_nome}):\n${resumo}`,
+    error: null
+  });
+}
+
 function handleNewChecklist() {
+  if (state.currentUser.perfil === 'mecanico') loadManutencoesPendentes();
   setState({
     screen: 'setup', selectedVeiculo: null, setupVeiculoId: '', tacografo: '', km: '', selectedRota: null, rotaQuery: '',
     motoristaRelacionado: '', motivo: '', abastecido: null, observacoesGerais: '',
+    resolvendoManutencaoId: null, resolvendoManutencaoItens: null,
     fotos: [], fotoPreviews: [], itens: initItens(state.currentUser.perfil), error: null
   });
 }
@@ -834,6 +868,19 @@ async function handleApproveChecklist(id) {
     status: 'aprovado', aprovado_por: state.currentUser.nome, aprovado_em: new Date().toISOString()
   }).eq('id', id);
   if (error) { setState({ error: 'Erro ao aprovar: ' + error.message }); return; }
+
+  const h = state.selectedDetail;
+  if (h && h.id === id && h.perfil === 'motorista') {
+    const problemas = (h.itens || []).filter(i => i.status === 'nok').map(i => ({ secao: i.secao, item: i.item, motivo: i.motivo || '' }));
+    if (problemas.length > 0) {
+      await supabaseClient.from('manutencoes').insert({
+        veiculo_id: h.veiculo_id, veiculo_placa: h.veiculo_placa,
+        origem_checklist_id: h.id, origem_usuario_nome: h.usuario_nome,
+        itens: problemas, status: 'pendente'
+      });
+    }
+  }
+
   setState({ screen: 'supervisor_home' });
   await loadAllChecklists(state.checklistFilter);
 }
@@ -931,7 +978,7 @@ function render() {
   const renderers = {
     login: renderLogin, pin: renderPin, setup: renderSetup, checklist: renderChecklist,
     success: renderSuccess, history: renderHistory, supervisor_home: renderSupervisorHome,
-    checklist_detail: renderChecklistDetail
+    checklist_detail: renderChecklistDetail, mecanico_pendentes: renderMecanicoPendentes
   };
   html += (renderers[s.screen] || renderLogin)();
   html += `</div></main>`;
@@ -1022,6 +1069,18 @@ function renderSetup() {
   return `
     <h1 class="title">Novo checklist</h1>
     <p class="subtitle">Preencha os dados do veículo antes de começar.</p>
+    ${perfil === 'mecanico' && !state.resolvendoManutencaoId ? `
+      <button class="btn-amber" style="margin-bottom:20px;" onclick="setState({screen:'mecanico_pendentes'})">
+        🔧 Veículos com problema pendente ${state.manutencoesPendentes.length ? '(' + state.manutencoesPendentes.length + ')' : ''}
+      </button>
+    ` : ''}
+    ${state.resolvendoManutencaoId ? `
+      <div class="list-card" style="border-color:var(--amber); margin-bottom:20px;">
+        <div class="list-placa">Resolvendo problema reportado</div>
+        ${state.resolvendoManutencaoItens.map(i => `<div style="font-size:13px; color:var(--muted); margin-top:4px;">• ${i.secao} — ${i.item}${i.motivo ? ': ' + i.motivo : ''}</div>`).join('')}
+        <button class="icon-btn" style="margin-top:8px;" onclick="setState({resolvendoManutencaoId:null, resolvendoManutencaoItens:null, motivo:''})">Cancelar</button>
+      </div>
+    ` : ''}
     <label class="field-label">Veículo (placa)</label>
     <select id="sel-veiculo" onchange="state.setupVeiculoId=this.value"><option value="">Selecione...</option>${vOptions}</select>
     <label class="field-label">Tacógrafo (opcional)</label>
@@ -1055,7 +1114,7 @@ function renderChecklist() {
         <div class="item-extra">
           <span class="required-tag">Explique o motivo (obrigatório)</span>
           <textarea placeholder="Descreva o problema encontrado..." oninput="state.itens[${idx}].motivo=this.value">${it.motivo}</textarea>
-          <div class="item-photo-strip">${it.fotoPreviews.map(p => `<img class="photo-thumb" src="${p}">`).join('')}</div>
+          <div class="item-photo-strip">${it.fotoPreviews.map(p => `<a href="${p}" target="_blank" rel="noopener"><img class="photo-thumb" src="${p}"></a>`).join('')}</div>
           <label class="photo-add-btn">📷 Foto (opcional)
             <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addItemFoto(${idx}, this.files)">
           </label>
@@ -1091,7 +1150,7 @@ function renderChecklist() {
       <label class="field-label">${perfil === 'mecanico' ? 'O que foi feito / peças trocadas' : 'Observações'}</label>
       <textarea placeholder="Descreva aqui os detalhes, problemas encontrados ou serviços realizados..." oninput="state.observacoesGerais=this.value">${state.observacoesGerais}</textarea>
       <label class="field-label">Fotos (opcional)</label>
-      <div class="photo-strip">${state.fotoPreviews.map(p => `<img class="photo-thumb" src="${p}">`).join('')}</div>
+      <div class="photo-strip">${state.fotoPreviews.map(p => `<a href="${p}" target="_blank" rel="noopener"><img class="photo-thumb" src="${p}"></a>`).join('')}</div>
       <label class="photo-add-btn">📷 Adicionar foto
         <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addFotos(this.files)">
       </label>
@@ -1176,9 +1235,128 @@ function renderSupervisorChecklists() {
   return filters + items;
 }
 
+async function openEditChecklist() {
+  const h = state.selectedDetail;
+  if (!h) return;
+  await loadAllVeiculosAdmin();
+  if (TEMPLATES[h.perfil].usesRota) await loadAllRotasAdmin();
+  if (h.perfil !== 'motorista') {
+    const { data } = await supabaseClient.from('usuarios').select('nome').eq('perfil', 'motorista');
+    setState({ motoristas: data || [] });
+  }
+  setState({ editingChecklist: JSON.parse(JSON.stringify(h)) });
+}
+
+function cancelEditChecklist() {
+  setState({ editingChecklist: null });
+}
+
+function setEditItemStatus(idx, status) {
+  const ec = state.editingChecklist;
+  ec.itens[idx] = { ...ec.itens[idx], status };
+  setState({ editingChecklist: ec });
+}
+
+async function saveEditedChecklist() {
+  const ec = state.editingChecklist;
+  const tpl = TEMPLATES[ec.perfil];
+  const semStatus = ec.itens.filter(i => !i.status);
+  if (semStatus.length > 0) { setState({ error: `Marque o status de todos os itens (falta: "${semStatus[0].item}").` }); return; }
+  if (tpl.requireReasonOnProblem) {
+    const semMotivo = ec.itens.find(i => i.status === tpl.problemStatus && !(i.motivo || '').trim());
+    if (semMotivo) { setState({ error: `Explique o motivo do problema em "${semMotivo.item}".` }); return; }
+  }
+  const veiculo = state.veiculos.find(v => v.id === ec.veiculo_id);
+  if (!veiculo) { setState({ error: 'Selecione um veículo válido.' }); return; }
+
+  setState({ submitting: true, error: null });
+  const payload = {
+    veiculo_id: veiculo.id, veiculo_placa: veiculo.placa, veiculo_modelo: veiculo.modelo || null,
+    tacografo: ec.tacografo || null, km: ec.km ? Number(ec.km) : null,
+    motorista_relacionado: ec.motorista_relacionado || null,
+    itens: ec.itens.map(i => ({ secao: i.secao, item: i.item, status: i.status, motivo: i.motivo || '', fotos: i.fotos || [] })),
+    observacoes_gerais: ec.observacoes_gerais || null
+  };
+  if (tpl.usesRota) payload.rota = ec.rota || null;
+  if (ec.perfil === 'motorista') payload.tipo_rota = ec.tipo_rota || null;
+  if (ec.perfil === 'mecanico') { payload.motivo = ec.motivo || null; payload.abastecido = ec.abastecido; }
+
+  const { data: updated, error } = await supabaseClient.from('checklists').update(payload).eq('id', ec.id).select().single();
+  if (error) { setState({ submitting: false, error: 'Erro ao salvar: ' + error.message }); return; }
+  setState({ submitting: false, selectedDetail: updated, editingChecklist: null });
+  await loadAllChecklists(state.checklistFilter);
+}
+
+function renderChecklistEditForm() {
+  const ec = state.editingChecklist;
+  const tpl = TEMPLATES[ec.perfil];
+  const vOptions = state.veiculos.map(v => `<option value="${v.id}" ${v.id === ec.veiculo_id ? 'selected' : ''}>${v.placa}${v.modelo ? ' — ' + v.modelo : ''}</option>`).join('');
+
+  let extra = '';
+  if (ec.perfil === 'motorista') {
+    extra += `
+      <label class="field-label">Tipo</label>
+      <div class="toggle-row">
+        <button type="button" class="toggle-btn ${ec.tipo_rota === 'saida' ? 'active' : ''}" onclick="state.editingChecklist.tipo_rota='saida'; setState({editingChecklist: state.editingChecklist})">Saída</button>
+        <button type="button" class="toggle-btn ${ec.tipo_rota === 'retorno' ? 'active' : ''}" onclick="state.editingChecklist.tipo_rota='retorno'; setState({editingChecklist: state.editingChecklist})">Retorno</button>
+      </div>
+    `;
+  } else {
+    const motOptions = state.motoristas.map(m => `<option value="${m.nome}" ${m.nome === ec.motorista_relacionado ? 'selected' : ''}>${m.nome}</option>`).join('');
+    extra += `<label class="field-label">Motorista do veículo</label><select onchange="state.editingChecklist.motorista_relacionado=this.value"><option value="">Selecione...</option>${motOptions}</select>`;
+    if (ec.perfil === 'mecanico') {
+      extra += `<label class="field-label">Motivo</label><textarea oninput="state.editingChecklist.motivo=this.value">${ec.motivo || ''}</textarea>`;
+    }
+  }
+
+  let rotaBlock = '';
+  if (tpl.usesRota) {
+    const rOptions = state.rotas.map(r => `<option value="${r.nome}" ${r.nome === ec.rota ? 'selected' : ''}>${r.nome}</option>`).join('');
+    rotaBlock = `<label class="field-label">Rota</label><select onchange="state.editingChecklist.rota=this.value"><option value="">Selecione...</option>${rOptions}</select>`;
+  }
+
+  const secoes = [];
+  ec.itens.forEach(i => { if (!secoes.includes(i.secao)) secoes.push(i.secao); });
+  const sectionsHtml = secoes.map(secao => {
+    const rows = ec.itens.map((it, idx) => ({ it, idx })).filter(x => x.it.secao === secao).map(({ it, idx }) => {
+      const btns = tpl.statusSet.map(st => `<button class="status-btn ${it.status === st ? 'active' : ''}" onclick="setEditItemStatus(${idx}, '${st}')">${STATUS_LABELS[st]}</button>`).join('');
+      const isProblem = it.status === tpl.problemStatus;
+      const extraItem = (isProblem && tpl.requireReasonOnProblem) ? `
+        <div class="item-extra">
+          <span class="required-tag">Motivo</span>
+          <textarea oninput="state.editingChecklist.itens[${idx}].motivo=this.value">${it.motivo || ''}</textarea>
+        </div>` : '';
+      return `<div class="item-row ${isProblem ? 'status-nok' : ''}">
+        <div class="item-top"><div class="item-label">${it.item}</div><div class="status-btns">${btns}</div></div>
+        ${extraItem}
+      </div>`;
+    }).join('');
+    return `<div class="section-block"><div class="section-head"><span class="section-name">${secao}</span></div>${rows}</div>`;
+  }).join('');
+
+  return `
+    <h1 class="title">Editando checklist</h1>
+    <p class="subtitle">Corrija os dados e salve.</p>
+    <label class="field-label">Veículo</label>
+    <select onchange="state.editingChecklist.veiculo_id=this.value">${vOptions}</select>
+    <label class="field-label">Tacógrafo</label>
+    <input type="text" value="${ec.tacografo || ''}" oninput="state.editingChecklist.tacografo=this.value">
+    <label class="field-label">KM</label>
+    <input type="number" value="${ec.km || ''}" oninput="state.editingChecklist.km=this.value">
+    ${extra}
+    ${rotaBlock}
+    <label class="field-label">Observações</label>
+    <textarea oninput="state.editingChecklist.observacoes_gerais=this.value">${ec.observacoes_gerais || ''}</textarea>
+    ${sectionsHtml}
+    <button class="btn-primary" ${state.submitting ? 'disabled' : ''} onclick="saveEditedChecklist()">${state.submitting ? 'Salvando...' : 'Salvar alterações'}</button>
+    <button class="btn-secondary" onclick="cancelEditChecklist()">Cancelar</button>
+  `;
+}
+
 function renderChecklistDetail() {
   const h = state.selectedDetail;
   if (!h) return `<div class="empty-msg">Checklist não encontrado.</div>`;
+  if (state.editingChecklist) return renderChecklistEditForm();
   const bySecao = {};
   (h.itens || []).forEach(i => { (bySecao[i.secao] = bySecao[i.secao] || []).push(i); });
   const sectionsHtml = Object.keys(bySecao).map(secao => `
@@ -1190,13 +1368,15 @@ function renderChecklistDetail() {
             <span>${i.item}</span><span class="detail-status-tag ${i.status}">${STATUS_LABELS[i.status] || i.status}</span>
           </div>
           ${i.motivo ? `<div style="font-size:13px; color:var(--muted);">${i.motivo}</div>` : ''}
-          ${(i.fotos && i.fotos.length > 0) ? `<div class="photo-strip">${i.fotos.map(url => `<img class="photo-thumb" src="${url}">`).join('')}</div>` : ''}
+          ${(i.fotos && i.fotos.length > 0) ? `<div class="photo-strip">${i.fotos.map(url => `<a href="${url}" target="_blank" rel="noopener"><img class="photo-thumb" src="${url}"></a>`).join('')}</div>` : ''}
         </div>
       `).join('')}
     </div>
   `).join('');
 
   const metaHtml = `<div class="meta-grid">
+    <div class="meta-cell"><div class="k">Placa</div><div class="v">${h.veiculo_placa}</div></div>
+    <div class="meta-cell"><div class="k">Modelo</div><div class="v">${h.veiculo_modelo || '—'}</div></div>
     <div class="meta-cell"><div class="k">Quem preencheu</div><div class="v">${h.usuario_nome}</div></div>
     <div class="meta-cell"><div class="k">Perfil</div><div class="v">${PERFIL_LABELS[h.perfil]}</div></div>
     <div class="meta-cell"><div class="k">Data</div><div class="v">${formatDate(h.criado_em)}</div></div>
@@ -1209,7 +1389,7 @@ function renderChecklistDetail() {
 
   const fotosHtml = (h.fotos && h.fotos.length > 0) ? `
     <div class="detail-section"><label class="field-label">Fotos</label>
-      <div class="photo-strip">${h.fotos.map(url => `<img class="photo-thumb" src="${url}">`).join('')}</div>
+      <div class="photo-strip">${h.fotos.map(url => `<a href="${url}" target="_blank" rel="noopener"><img class="photo-thumb" src="${url}"></a>`).join('')}</div>
     </div>` : '';
 
   return `
@@ -1223,6 +1403,7 @@ function renderChecklistDetail() {
       ${fotosHtml}
     </div>
     <button class="btn-secondary no-print" onclick="window.print()">🖨 Imprimir este checklist</button>
+    <button class="btn-secondary no-print" onclick="openEditChecklist()">✏️ Editar checklist</button>
     ${h.status === 'pendente' ? `<button class="btn-primary no-print" onclick="handleApproveChecklist('${h.id}')">Aprovar checklist</button>` : `<p class="subtitle">Aprovado por ${h.aprovado_por} em ${formatDate(h.aprovado_em)}</p>`}
     <button class="icon-btn danger no-print" style="width:100%; padding:13px; margin-top:10px;" onclick="handleDeleteChecklist('${h.id}')">Excluir checklist (preenchido por engano)</button>
     <button class="btn-secondary no-print" onclick="setState({screen:'supervisor_home'})">Voltar</button>
@@ -1502,6 +1683,30 @@ async function exportPowerPoint() {
   }
 
   await pptx.writeFile({ fileName: 'relatorio-checklistop.pptx' });
+}
+
+function renderMecanicoPendentes() {
+  if (state.manutencoesPendentes.length === 0) {
+    return `
+      <h1 class="title">Veículos com problema</h1>
+      <div class="empty-msg">Nenhuma pendência no momento. 🎉</div>
+      <button class="btn-secondary" onclick="setState({screen:'setup'})">Voltar</button>
+    `;
+  }
+  const items = state.manutencoesPendentes.map(m => `
+    <div class="list-card">
+      <div class="list-top"><span>${formatDate(m.criado_em)}</span><span>Relatado por ${m.origem_usuario_nome}</span></div>
+      <div class="list-placa">${m.veiculo_placa}</div>
+      ${m.itens.map(i => `<div style="font-size:13px; color:var(--muted); margin-top:4px;">• ${i.secao} — ${i.item}${i.motivo ? ': ' + i.motivo : ''}</div>`).join('')}
+      <button class="btn-primary" style="margin-top:10px;" onclick="handleResolverManutencao('${m.id}')">Resolver este</button>
+    </div>
+  `).join('');
+  return `
+    <h1 class="title">Veículos com problema</h1>
+    <p class="subtitle">Escolha um para abrir o checklist e registrar o que foi corrigido.</p>
+    ${items}
+    <button class="btn-secondary" onclick="setState({screen:'setup'})">Voltar</button>
+  `;
 }
 
 function renderSupervisorEquipe() {
