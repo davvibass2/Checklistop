@@ -637,6 +637,7 @@ async function handleConfirmPin(pin) {
   if (!pin || pin.length !== 4) { setState({ error: 'Digite os 4 dígitos da senha.' }); return; }
   if (pin !== state.selectedUsuario.pin) { setState({ error: 'Senha incorreta. Tente novamente.' }); return; }
   const user = { id: state.selectedUsuario.id, nome: state.selectedUsuario.nome, perfil: state.selectedUsuario.perfil };
+  try { localStorage.setItem('checklistop_session', JSON.stringify(user)); } catch (e) {}
   if (user.perfil === 'supervisor') {
     setState({ currentUser: user, screen: 'supervisor_home', error: null, supervisorTab: 'checklists' });
     await loadAllChecklists('pendente');
@@ -653,6 +654,7 @@ async function handleConfirmPin(pin) {
 }
 
 function handleLogout() {
+  try { localStorage.removeItem('checklistop_session'); } catch (e) {}
   setState({
     screen: 'login', currentUser: null, selectedUsuario: null, selectedVeiculo: null,
     tacografo: '', km: '', tipoRota: 'saida', motoristaRelacionado: '', motivo: '',
@@ -1022,7 +1024,7 @@ function renderPin() {
     <h1 class="title">Olá, ${state.selectedUsuario.nome.split(' ')[0]}</h1>
     <p class="subtitle">Digite sua senha de 4 dígitos.</p>
     <label class="field-label">Senha</label>
-    <input class="pin-input" id="pin-input" type="text" inputmode="numeric" maxlength="4" placeholder="••••" autofocus>
+    <input class="pin-input" id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autofocus>
     <button class="btn-primary" onclick="handleConfirmPin(document.getElementById('pin-input').value)">Entrar</button>
     <button class="btn-secondary" onclick="setState({screen:'login', error:null})">Voltar</button>
   `;
@@ -1796,7 +1798,33 @@ function renderSupervisorVeiculos() {
   return `<button class="fab" onclick="openVeiculoForm(null)">+ Novo veículo</button>${rows}`;
 }
 
-render();
+async function initApp() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('checklistop_session') || 'null'); } catch (e) {}
+
+  if (!saved || !saved.id) { render(); return; }
+
+  state.currentUser = saved;
+  if (saved.perfil === 'supervisor') {
+    state.screen = 'supervisor_home';
+    render();
+    await loadAllChecklists(state.checklistFilter);
+  } else {
+    state.screen = 'setup';
+    state.itens = initItens(saved.perfil);
+    render();
+    await loadVeiculos();
+    if (TEMPLATES[saved.perfil].usesRota) await loadRotas();
+    if (saved.perfil !== 'motorista') {
+      const { data } = await supabaseClient.from('usuarios').select('nome').eq('perfil', 'motorista').eq('ativo', true);
+      state.motoristas = data || [];
+    }
+    if (saved.perfil === 'mecanico') await loadManutencoesPendentes();
+    render();
+  }
+}
+
+initApp();
 </script>
 </body>
 </html>
