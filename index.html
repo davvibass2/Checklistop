@@ -300,31 +300,7 @@
   .table-simple th { text-align: left; font-family: var(--mono); font-size: 10px; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 2px solid var(--slate); }
   .table-simple td { padding: 8px; border-bottom: 1px solid var(--border); }
 
-  /* ---------- Avaliação ---------- */
-  .score-box { background: linear-gradient(135deg, var(--atalat-blue), var(--atalat-blue-dark)); color:#fff; border-radius:14px; padding:18px; text-align:center; margin-bottom:16px; }
-  .score-value { font-family: var(--display); font-size:48px; font-weight:800; line-height:1; }
-  .score-label { font-size:13px; opacity:0.9; margin-top:4px; }
-  .score-class-badge { display:inline-block; padding:5px 14px; border-radius:20px; font-size:12px; font-weight:700; color:#fff; margin-top:8px; }
-  .mini-scores { display:flex; justify-content:space-around; margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.25); }
-  .mini-scores div { text-align:center; }
-  .mini-scores .mv { font-size:22px; font-weight:700; }
-  .mini-scores .ml { font-size:11px; opacity:0.85; }
-  .aval-item { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); gap:10px; }
-  .aval-item:last-child { border-bottom:none; }
-  .aval-item-title { flex:1; font-size:14px; line-height:1.35; }
-  .aval-btns { display:flex; gap:6px; flex-shrink:0; }
-  .aval-btn { min-width:46px; height:38px; border:2px solid var(--border); border-radius:8px; background:var(--card); font-weight:700; font-size:13px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-  .aval-btn.sel-a { border-color:#1e8e3e; background:#1e8e3e; color:#fff; }
-  .aval-btn.sel-b { border-color:var(--amber); background:var(--amber); color:var(--slate); }
-  .aval-btn.sel-c { border-color:var(--nok); background:var(--nok); color:#fff; }
-  .aval-btn.sel-low { border-color:#1e8e3e; background:#1e8e3e; color:#fff; }
-  .aval-btn.sel-mid { border-color:var(--amber); background:var(--amber); color:var(--slate); }
-  .aval-btn.sel-high { border-color:var(--nok); background:var(--nok); color:#fff; }
-  .aval-tabs { display:flex; gap:6px; margin-bottom:20px; }
-  .aval-tab { flex:1; padding:12px 6px; border:none; background:var(--card); border:1.5px solid var(--border); color:var(--muted); font-weight:600; font-size:14px; border-radius:10px; cursor:pointer; }
-  .aval-tab.active { background:var(--green); color:#fff; border-color:var(--green); }
-  .hist-card { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:14px; margin-bottom:10px; }
-  .hist-nota { font-family:var(--display); font-size:28px; font-weight:800; }
+  @media print {
     body * { visibility: hidden; }
     #print-report, #print-report * { visibility: visible; }
     #print-report { position: absolute; top: 0; left: 0; width: 100%; padding: 20px; }
@@ -397,105 +373,7 @@ const TEMPLATES = {
 };
 
 const STATUS_LABELS = { ok: 'OK', nok: 'NOK', na: 'N/A', sim: 'SIM', nao: 'NÃO' };
-const PERFIL_LABELS = { motorista: 'Motorista', mecanico: 'Mecânico', lavador: 'Lavador', supervisor: 'Supervisor', inspetor: 'Inspetor' };
-
-// ============================================================
-// AVALIAÇÃO DE MOTORISTAS (perfil inspetor)
-// ============================================================
-const PADRAO_ITENS = [
-  {id:'p01', t:'Planejamento da viagem'},
-  {id:'p02', t:'Checklist periódico pessoal e técnico'},
-  {id:'p03', t:'Aceleração constante, gentil e inteligente'},
-  {id:'p04', t:'Conta-giros ponto extra econômico'},
-  {id:'p05', t:'Administra marcha lenta'},
-  {id:'p06', t:'Ter uma concentração total na condução'},
-  {id:'p07', t:'Distância de seguimento aumentada'},
-  {id:'p08', t:'Desaceleração planejada'},
-  {id:'p09', t:'Uso do freio motor antes do freio de serviço'},
-  {id:'p10', t:'Pressão do turbo mais baixa'},
-  {id:'p11', t:'Aproveitar a inércia e gravidade'},
-  {id:'p12', t:'Velocidade constante e adequada ao trecho'},
-  {id:'p13', t:'Cuidar da saúde mental, alimentação, estresse e sono'},
-  {id:'p14', t:'Processo de coleta'},
-  {id:'p15', t:'Limpeza interna do veículo'},
-  {id:'p16', t:'Uso correto do tacógrafo'}
-];
-const VICIOS_ITENS = [
-  {id:'v01', t:'Uso indevido do freio de serviço'},
-  {id:'v02', t:'Não respeitar as regras da empresa e trânsito'},
-  {id:'v03', t:'Ser resistente a mudanças e melhorias'},
-  {id:'v04', t:'Não usar os recursos do veículo'},
-  {id:'v05', t:'Andar sempre no limite de velocidade'},
-  {id:'v06', t:'Se distrair e usar o celular ao dirigir'},
-  {id:'v07', t:'Tentar burlar o sistema de telemetria'},
-  {id:'v08', t:'Dirigir com uma mão'},
-  {id:'v09', t:'Não se adequar às novas tecnologias'}
-];
-
-function calcularPadrao(resp) {
-  const vals = Object.values(resp);
-  if (!vals.length) return null;
-  return vals.reduce((s,v) => s + (v==='A'?100:v==='B'?66.6:33.3), 0) / vals.length;
-}
-function calcularVicios(resp) {
-  const vals = Object.values(resp);
-  if (!vals.length) return null;
-  return vals.reduce((s,v) => s + (100 - parseFloat(v)), 0) / vals.length;
-}
-function notaFinal(p, v) {
-  if (p===null && v===null) return null;
-  if (p===null) return v;
-  if (v===null) return p;
-  return p*0.6 + v*0.4;
-}
-function classificar(nota) {
-  if (nota >= 85) return {l:'EXCELENTE', cor:'#1e8e3e'};
-  if (nota >= 70) return {l:'BOM', cor:'#1482C8'};
-  if (nota >= 50) return {l:'ATENÇÃO', cor:'#D9A441'};
-  return {l:'CRÍTICO', cor:'#C0453A'};
-}
-
-async function loadAvaliacaoHistorico() {
-  const { data } = await supabaseClient.from('avaliacoes').select('*')
-    .order('criado_em', { ascending: false }).limit(100);
-  setState({ avaliacaoHistorico: data || [] });
-}
-
-async function submitAvaliacao() {
-  const s = state;
-  if (!s.avaliacaoMotoristaId) { setState({ error: 'Selecione um motorista.' }); return; }
-  const totalItens = PADRAO_ITENS.length + VICIOS_ITENS.length;
-  const totalResp = Object.keys(s.avaliacaoRespostas.padrao).length + Object.keys(s.avaliacaoRespostas.vicios).length;
-  if (totalResp < totalItens) { setState({ error: `Responda todos os itens (${totalResp} de ${totalItens} respondidos).` }); return; }
-
-  const motU = s.usuarios.find(u => u.id === s.avaliacaoMotoristaId);
-  const np = calcularPadrao(s.avaliacaoRespostas.padrao);
-  const nv = calcularVicios(s.avaliacaoRespostas.vicios);
-  const nf = notaFinal(np, nv);
-  const cls = nf !== null ? classificar(nf).l : null;
-
-  setState({ submitting: true, error: null });
-  const { error } = await supabaseClient.from('avaliacoes').insert({
-    motorista_id: s.avaliacaoMotoristaId,
-    motorista_nome: motU ? motU.nome : '—',
-    inspetor_id: s.currentUser.id,
-    inspetor_nome: s.currentUser.nome,
-    veiculo_placa: s.avaliacaoVeiculo || null,
-    rota: s.avaliacaoRota || null,
-    padrao: s.avaliacaoRespostas.padrao,
-    vicios: s.avaliacaoRespostas.vicios,
-    nota_padrao: np, nota_vicios: nv, nota_final: nf, classificacao: cls,
-    observacoes: s.avaliacaoObs || null
-  });
-  if (error) { setState({ submitting: false, error: 'Erro ao salvar: ' + error.message }); return; }
-  setState({
-    submitting: false, avaliacaoScreen: 'sucesso',
-    avaliacaoRespostas: { padrao: {}, vicios: {} },
-    avaliacaoMotoristaId: null, avaliacaoVeiculo: '', avaliacaoRota: '', avaliacaoObs: '',
-    error: null
-  });
-  await loadAvaliacaoHistorico();
-}
+const PERFIL_LABELS = { motorista: 'Motorista', mecanico: 'Mecânico', lavador: 'Lavador', supervisor: 'Supervisor' };
 
 // ============================================================
 // ESTADO
@@ -540,14 +418,7 @@ let state = {
   manutencoesPendentes: [],
   resolvendoManutencaoId: null,
   resolvendoManutencaoItens: null,
-  editingChecklist: null,
-  avaliacaoMotoristaId: null,
-  avaliacaoRespostas: { padrao: {}, vicios: {} },
-  avaliacaoObs: '',
-  avaliacaoVeiculo: '',
-  avaliacaoRota: '',
-  avaliacaoHistorico: [],
-  avaliacaoScreen: 'inicio' // inicio | form | historico | relatorio
+  editingChecklist: null
 };
 
 const app = document.getElementById('app');
@@ -770,18 +641,6 @@ async function handleConfirmPin(pin) {
   if (user.perfil === 'supervisor') {
     setState({ currentUser: user, screen: 'supervisor_home', error: null, supervisorTab: 'checklists' });
     await loadAllChecklists('pendente');
-  } else if (user.perfil === 'inspetor') {
-    const motoristas = await supabaseClient.from('usuarios').select('id, nome').eq('perfil', 'motorista').eq('ativo', true).order('nome');
-    const veiculos = await supabaseClient.from('veiculos').select('placa').eq('ativo', true).order('placa');
-    const rotas = await supabaseClient.from('rotas').select('nome').eq('ativo', true).order('nome');
-    setState({
-      currentUser: user, screen: 'inspetor_home', error: null,
-      avaliacaoScreen: 'inicio',
-      usuarios: motoristas.data || [],
-      veiculos: veiculos.data || [],
-      rotas: rotas.data || []
-    });
-    await loadAvaliacaoHistorico();
   } else {
     setState({ currentUser: user, screen: 'setup', error: null, itens: initItens(user.perfil) });
     await loadVeiculos();
@@ -964,7 +823,6 @@ async function switchSupervisorTab(tab) {
   if (tab === 'veiculos') await loadAllVeiculosAdmin();
   if (tab === 'rotas') await loadAllRotasAdmin();
   if (tab === 'relatorios') await loadReportData(state.reportPeriod);
-  if (tab === 'avaliacoes') await loadAvaliacaoHistorico();
 }
 
 function openRotaForm(rota) {
@@ -1135,8 +993,7 @@ function render() {
   const renderers = {
     login: renderLogin, pin: renderPin, setup: renderSetup, checklist: renderChecklist,
     success: renderSuccess, history: renderHistory, supervisor_home: renderSupervisorHome,
-    checklist_detail: renderChecklistDetail, mecanico_pendentes: renderMecanicoPendentes,
-    inspetor_home: renderInspetorHome
+    checklist_detail: renderChecklistDetail, mecanico_pendentes: renderMecanicoPendentes
   };
   html += (renderers[s.screen] || renderLogin)();
   html += `</div></main>`;
@@ -1365,7 +1222,6 @@ function renderSupervisorHome() {
     <button class="tab-btn ${state.supervisorTab === 'veiculos' ? 'active' : ''}" onclick="switchSupervisorTab('veiculos')">Veículos</button>
     <button class="tab-btn ${state.supervisorTab === 'rotas' ? 'active' : ''}" onclick="switchSupervisorTab('rotas')">Rotas</button>
     <button class="tab-btn ${state.supervisorTab === 'relatorios' ? 'active' : ''}" onclick="switchSupervisorTab('relatorios')">Relatórios</button>
-    <button class="tab-btn ${state.supervisorTab === 'avaliacoes' ? 'active' : ''}" onclick="switchSupervisorTab('avaliacoes')">Avaliações</button>
   </div>`;
 
   if (state.supervisorTab === 'checklists') return tabs + renderSupervisorChecklists();
@@ -1373,7 +1229,6 @@ function renderSupervisorHome() {
   if (state.supervisorTab === 'veiculos') return tabs + renderSupervisorVeiculos();
   if (state.supervisorTab === 'rotas') return tabs + renderSupervisorRotas();
   if (state.supervisorTab === 'relatorios') return tabs + renderSupervisorRelatorios();
-  if (state.supervisorTab === 'avaliacoes') return tabs + renderSupervisorAvaliacoes();
   return tabs;
 }
 
@@ -1574,153 +1429,6 @@ function renderChecklistDetail() {
     <button class="icon-btn danger no-print" style="width:100%; padding:13px; margin-top:10px;" onclick="handleDeleteChecklist('${h.id}')">Excluir checklist (preenchido por engano)</button>
     <button class="btn-secondary no-print" onclick="setState({screen:'supervisor_home'})">Voltar</button>
   `;
-}
-
-function renderInspetorHome() {
-  const s = state;
-  const motoristas = s.usuarios.filter(u => u.id); // lista de motoristas
-
-  if (s.avaliacaoScreen === 'sucesso') {
-    return `
-      <div class="stamp-wrap">
-        <div class="stamp" style="border-color:var(--ok); color:var(--ok);">ENVIADA</div>
-        <div class="stamp-detail">Avaliação salva com sucesso.</div>
-        <button class="btn-primary" onclick="setState({avaliacaoScreen:'inicio'})">Nova avaliação</button>
-        <button class="btn-secondary" onclick="setState({avaliacaoScreen:'historico'})">Ver histórico</button>
-      </div>`;
-  }
-
-  const tabs = `<div class="aval-tabs">
-    <button class="aval-tab ${s.avaliacaoScreen==='inicio'||s.avaliacaoScreen==='form'?'active':''}" onclick="setState({avaliacaoScreen:'inicio'})">📝 Avaliar</button>
-    <button class="aval-tab ${s.avaliacaoScreen==='historico'?'active':''}" onclick="setState({avaliacaoScreen:'historico'})">📋 Histórico</button>
-  </div>`;
-
-  if (s.avaliacaoScreen === 'historico') {
-    const hist = s.avaliacaoHistorico;
-    const rows = hist.length === 0 ? `<div class="empty-msg">Nenhuma avaliação ainda.</div>` : hist.map(a => {
-      const cls = a.nota_final !== null ? classificar(a.nota_final) : null;
-      return `<div class="hist-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div>
-            <div style="font-weight:700;font-size:15px;">${a.motorista_nome}</div>
-            <div style="font-size:12px;color:var(--muted);">${formatDate(a.criado_em)}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div>
-          </div>
-          ${a.nota_final !== null ? `<div>
-            <div class="hist-nota" style="color:${cls.cor}">${a.nota_final.toFixed(1)}</div>
-            <div style="font-size:11px;font-weight:700;color:${cls.cor};text-align:center;">${cls.l}</div>
-          </div>` : ''}
-        </div>
-        <div style="display:flex;gap:10px;font-size:13px;color:var(--muted);">
-          <span>Padrão: ${a.nota_padrao!==null?a.nota_padrao.toFixed(1):'—'}</span>
-          <span>Vícios: ${a.nota_vicios!==null?a.nota_vicios.toFixed(1):'—'}</span>
-        </div>
-        ${a.observacoes ? `<div style="font-size:13px;margin-top:8px;color:var(--ink);">${a.observacoes}</div>` : ''}
-      </div>`;
-    }).join('');
-    return tabs + `<h1 class="title">Histórico</h1>` + rows;
-  }
-
-  if (s.avaliacaoScreen === 'form') {
-    const resp = s.avaliacaoRespostas;
-    const np = calcularPadrao(resp.padrao);
-    const nv = calcularVicios(resp.vicios);
-    const nf = notaFinal(np, nv);
-    const cls = nf !== null ? classificar(nf) : null;
-    const totalResp = Object.keys(resp.padrao).length + Object.keys(resp.vicios).length;
-    const totalItens = PADRAO_ITENS.length + VICIOS_ITENS.length;
-    const motU = s.usuarios.find(u => u.id === s.avaliacaoMotoristaId);
-
-    const scoreHtml = nf !== null ? `
-      <div class="score-box">
-        <div class="score-value">${nf.toFixed(1)}</div>
-        <div class="score-label">Nota final</div>
-        <div class="score-class-badge" style="background:${cls.cor}">${cls.l}</div>
-        <div class="mini-scores">
-          <div><div class="mv">${np!==null?np.toFixed(1):'—'}</div><div class="ml">Padrão</div></div>
-          <div><div class="mv">${nv!==null?nv.toFixed(1):'—'}</div><div class="ml">Vícios</div></div>
-          <div><div class="mv">${totalResp}/${totalItens}</div><div class="ml">Itens</div></div>
-        </div>
-      </div>` : `<div class="progress-pill" style="margin-bottom:16px;">${totalResp} de ${totalItens} itens respondidos</div>`;
-
-    const padraoRows = PADRAO_ITENS.map((item, i) => {
-      const v = resp.padrao[item.id];
-      return `<div class="aval-item">
-        <div class="aval-item-title">${i+1}. ${item.t}</div>
-        <div class="aval-btns">
-          <button class="aval-btn ${v==='A'?'sel-a':''}" onclick="setAvalResp('padrao','${item.id}','A')">A</button>
-          <button class="aval-btn ${v==='B'?'sel-b':''}" onclick="setAvalResp('padrao','${item.id}','B')">B</button>
-          <button class="aval-btn ${v==='33.3'?'sel-c':''}" onclick="setAvalResp('padrao','${item.id}','33.3')">C</button>
-        </div>
-      </div>`;
-    }).join('');
-
-    const viciosRows = VICIOS_ITENS.map((item, i) => {
-      const v = resp.vicios[item.id];
-      return `<div class="aval-item">
-        <div class="aval-item-title">${i+1}. ${item.t}</div>
-        <div class="aval-btns">
-          <button class="aval-btn ${v==='33.3'?'sel-low':''}" onclick="setAvalResp('vicios','${item.id}','33.3')">Baixo</button>
-          <button class="aval-btn ${v==='66.6'?'sel-mid':''}" onclick="setAvalResp('vicios','${item.id}','66.6')">Médio</button>
-          <button class="aval-btn ${v==='99.9'?'sel-high':''}" onclick="setAvalResp('vicios','${item.id}','99.9')">Alto</button>
-        </div>
-      </div>`;
-    }).join('');
-
-    return `
-      <h1 class="title">${motU ? motU.nome.split(' ')[0] : '—'}</h1>
-      <p class="subtitle">Avaliação de condução</p>
-      ${scoreHtml}
-      <div class="form-card">
-        <label class="field-label">Observações (opcional)</label>
-        <textarea placeholder="Pontos de atenção, elogios, etc..." oninput="state.avaliacaoObs=this.value">${s.avaliacaoObs}</textarea>
-      </div>
-      <div class="section-block">
-        <div class="section-head"><span class="section-num">01</span><span class="section-name">Padrão de Condução</span></div>
-        <div class="form-card">${padraoRows}</div>
-      </div>
-      <div class="section-block">
-        <div class="section-head"><span class="section-num">02</span><span class="section-name">Vícios — Intensidade</span></div>
-        <div class="form-card">${viciosRows}</div>
-      </div>
-      <div class="sticky-footer">
-        <div class="progress-pill">${totalResp} de ${totalItens} itens · <span onclick="setState({avaliacaoScreen:'inicio'})" style="cursor:pointer;text-decoration:underline;">trocar motorista</span></div>
-        <button class="btn-primary" ${s.submitting?'disabled':''} onclick="submitAvaliacao()">${s.submitting?'Salvando...':'Enviar avaliação'}</button>
-      </div>`;
-  }
-
-  // tela inicial: escolher motorista
-  const mOptions = motoristas.map(m => `<option value="${m.id}">${m.nome}</option>`).join('');
-  const vOptions = (s.veiculos||[]).map(v => `<option value="${v.placa}">${v.placa}</option>`).join('');
-  const rOptions = (s.rotas||[]).map(r => `<option value="${r.nome}">${r.nome}</option>`).join('');
-
-  return tabs + `
-    <h1 class="title">Nova avaliação</h1>
-    <p class="subtitle">Selecione o motorista e inicie.</p>
-    <label class="field-label">Motorista</label>
-    <select onchange="setState({avaliacaoMotoristaId:this.value})">
-      <option value="">Selecione...</option>${mOptions}
-    </select>
-    <label class="field-label">Veículo (opcional)</label>
-    <select onchange="state.avaliacaoVeiculo=this.value">
-      <option value="">Selecione...</option>${vOptions}
-    </select>
-    <label class="field-label">Rota (opcional)</label>
-    <select onchange="state.avaliacaoRota=this.value">
-      <option value="">Selecione...</option>${rOptions}
-    </select>
-    <button class="btn-primary" onclick="iniciarAvaliacao()">Iniciar avaliação</button>
-    <button class="btn-secondary" onclick="setState({avaliacaoScreen:'historico'})">Ver histórico</button>`;
-}
-
-function iniciarAvaliacao() {
-  if (!state.avaliacaoMotoristaId) { setState({ error: 'Selecione um motorista.' }); return; }
-  setState({ avaliacaoScreen: 'form', avaliacaoRespostas: { padrao: {}, vicios: {} }, error: null });
-}
-
-function setAvalResp(tipo, id, val) {
-  const r = { padrao: {...state.avaliacaoRespostas.padrao}, vicios: {...state.avaliacaoRespostas.vicios} };
-  r[tipo][id] = val;
-  setState({ avaliacaoRespostas: r });
 }
 
 function renderSupervisorRotas() {
@@ -2022,61 +1730,6 @@ function renderMecanicoPendentes() {
   `;
 }
 
-function renderSupervisorAvaliacoes() {
-  const hist = state.avaliacaoHistorico;
-  if (hist.length === 0) {
-    return `<div class="empty-msg">Nenhuma avaliação enviada ainda.</div>`;
-  }
-
-  // Ranking por motorista
-  const map = {};
-  hist.forEach(a => {
-    if (!a.motorista_id || a.nota_final === null) return;
-    if (!map[a.motorista_id]) map[a.motorista_id] = { nome: a.motorista_nome, notas: [] };
-    map[a.motorista_id].notas.push(a.nota_final);
-  });
-  const ranking = Object.values(map).map(m => ({
-    nome: m.nome, media: m.notas.reduce((s,n)=>s+n,0)/m.notas.length, qtd: m.notas.length
-  })).sort((a,b) => b.media - a.media);
-
-  const rankingHtml = `
-    <div class="chart-card"><h3>Ranking de motoristas</h3>
-      <table class="table-simple"><thead><tr><th>#</th><th>Motorista</th><th>Média</th><th>Classe</th><th>Avaliações</th></tr></thead><tbody>
-        ${ranking.map((r, i) => {
-          const cls = classificar(r.media);
-          return `<tr>
-            <td style="font-weight:700;color:var(--muted);">${i+1}</td>
-            <td>${r.nome}</td>
-            <td style="font-weight:700;color:${cls.cor}">${r.media.toFixed(1)}</td>
-            <td style="font-weight:700;color:${cls.cor}">${cls.l}</td>
-            <td>${r.qtd}</td>
-          </tr>`;
-        }).join('')}
-      </tbody></table>
-    </div>`;
-
-  const recentHtml = `
-    <div class="chart-card"><h3>Avaliações recentes</h3>
-      ${hist.slice(0,15).map(a => {
-        const cls = a.nota_final !== null ? classificar(a.nota_final) : null;
-        return `<div class="detail-item-row" style="flex-direction:column;align-items:flex-start;gap:2px;">
-          <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
-            <span style="font-weight:600;">${a.motorista_nome}</span>
-            ${cls ? `<span style="font-weight:700;color:${cls.cor}">${a.nota_final.toFixed(1)} — ${cls.l}</span>` : ''}
-          </div>
-          <div style="font-size:12px;color:var(--muted);">${formatDate(a.criado_em)} · ${a.inspetor_nome}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div>
-        </div>`;
-      }).join('')}
-    </div>`;
-
-  return `
-    <h1 class="title">Avaliações de motoristas</h1>
-    <p class="subtitle">Avaliações enviadas pelo inspetor.</p>
-    ${rankingHtml}
-    ${recentHtml}
-  `;
-}
-
 function renderSupervisorEquipe() {
   if (state.equipeForm) {
     const f = state.equipeForm;
@@ -2088,7 +1741,7 @@ function renderSupervisorEquipe() {
         <input type="text" maxlength="4" inputmode="numeric" value="${f.pin}" oninput="state.equipeForm.pin=this.value">
         <label class="field-label">Perfil</label>
         <select onchange="state.equipeForm.perfil=this.value">
-          ${['motorista', 'mecanico', 'lavador', 'supervisor', 'inspetor'].map(p => `<option value="${p}" ${f.perfil === p ? 'selected' : ''}>${PERFIL_LABELS[p]}</option>`).join('')}
+          ${['motorista', 'mecanico', 'lavador', 'supervisor'].map(p => `<option value="${p}" ${f.perfil === p ? 'selected' : ''}>${PERFIL_LABELS[p]}</option>`).join('')}
         </select>
         <button class="btn-primary" onclick="saveEquipeForm()">Salvar</button>
         <button class="btn-secondary" onclick="setState({equipeForm:null, error:null})">Cancelar</button>
@@ -2156,20 +1809,6 @@ async function initApp() {
     state.screen = 'supervisor_home';
     render();
     await loadAllChecklists(state.checklistFilter);
-  } else if (saved.perfil === 'inspetor') {
-    state.screen = 'inspetor_home';
-    state.avaliacaoScreen = 'inicio';
-    render();
-    const [motoristas, veiculos, rotas] = await Promise.all([
-      supabaseClient.from('usuarios').select('id, nome').eq('perfil', 'motorista').eq('ativo', true).order('nome'),
-      supabaseClient.from('veiculos').select('placa').eq('ativo', true).order('placa'),
-      supabaseClient.from('rotas').select('nome').eq('ativo', true).order('nome')
-    ]);
-    state.usuarios = motoristas.data || [];
-    state.veiculos = veiculos.data || [];
-    state.rotas = rotas.data || [];
-    await loadAvaliacaoHistorico();
-    render();
   } else {
     state.screen = 'setup';
     state.itens = initItens(saved.perfil);
