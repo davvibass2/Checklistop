@@ -182,6 +182,7 @@ let S={
   abast:null,itens:[],obsG:'',fotos:[],fp:[],
   submitting:false,error:null,history:[],
   svTab:'checklists',clFilter:'pendente',allCL:[],selDetail:null,
+  fPerfil:'',fUsuario:'',fPlaca:'',fDataIni:'',fDataFim:'',
   eqForm:null,veicForm:null,rotaForm:null,
   report:null,rPeriod:'mes_atual',rStart:'',rEnd:'',
   mpend:[],resolvMid:null,resolvMitens:null,
@@ -199,7 +200,18 @@ async function ldUadm(){const{data}=await sb.from('usuarios').select('*').order(
 async function ldVadm(){const{data}=await sb.from('veiculos').select('*').order('placa');SS({veiculos:data||[]});}
 async function ldRadm(){const{data}=await sb.from('rotas').select('*').order('nome');SS({rotas:data||[]});}
 async function ldHist(uid){const{data}=await sb.from('checklists').select('*').eq('usuario_id',uid).order('criado_em',{ascending:false}).limit(20);SS({history:data||[]});}
-async function ldCL(f){let q=sb.from('checklists').select('*').order('criado_em',{ascending:false}).limit(50);if(f&&f!=='todos')q=q.eq('status',f);const{data}=await q;SS({allCL:data||[]});}
+async function ldCL(f){
+  let q=sb.from('checklists').select('*').order('criado_em',{ascending:false}).limit(200);
+  if(f&&f!=='todos')q=q.eq('status',f);
+  if(S.fPerfil)q=q.eq('perfil',S.fPerfil);
+  if(S.fPlaca)q=q.ilike('veiculo_placa','%'+S.fPlaca+'%');
+  if(S.fDataIni)q=q.gte('criado_em',S.fDataIni+'T00:00:00');
+  if(S.fDataFim)q=q.lte('criado_em',S.fDataFim+'T23:59:59');
+  const{data}=await q;
+  let cls=data||[];
+  if(S.fUsuario){const q2=S.fUsuario.toLowerCase();cls=cls.filter(c=>c.usuario_nome.toLowerCase().includes(q2));}
+  SS({allCL:cls});
+}
 async function ldMP(){const{data}=await sb.from('manutencoes').select('*').eq('status','pendente').order('criado_em',{ascending:false});SS({mpend:data||[]});}
 async function ldAH(){const{data}=await sb.from('avaliacoes').select('*').order('criado_em',{ascending:false}).limit(100);SS({avHist:data||[]});}
 
@@ -338,7 +350,7 @@ function openDetail(id){const c=S.allCL.find(x=>x.id===id);SS({selDetail:c,scree
 
 async function svTab(t){
   SS({svTab:t,error:null});
-  if(t==='checklists')await ldCL(S.clFilter);
+  if(t==='checklists'){await ldCL(S.clFilter);await ldMP();}
   if(t==='equipe')await ldUadm();
   if(t==='veiculos')await ldVadm();
   if(t==='rotas')await ldRadm();
@@ -346,6 +358,8 @@ async function svTab(t){
   if(t==='avaliacoes')await ldAH();
 }
 async function setCLF(f){SS({clFilter:f});await ldCL(f);}
+async function applyFiltros(){await ldCL(S.clFilter);}
+function limparFiltros(){SS({fPerfil:'',fUsuario:'',fPlaca:'',fDataIni:'',fDataFim:''});ldCL(S.clFilter);}
 
 function openEqF(u){SS({eqForm:u?{...u}:{id:null,nome:'',pin:'',perfil:'motorista',ativo:true}});}
 async function saveEqF(){
@@ -496,7 +510,7 @@ function rPin(){
   return`<h1 class="t">Olá, ${S.selU.nome.split(' ')[0]}</h1>
     <p class="s">Digite sua senha de 4 dígitos.</p>
     <label class="fl">Senha</label>
-    <input class="pin" id="pi" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autofocus>
+    <input class="pin" id="pi" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="••••" autofocus onkeydown="if(event.key==='Enter')confirmPin(this.value)">
     <button class="bp" onclick="confirmPin(document.getElementById('pi').value)">Entrar</button>
     <button class="bs" onclick="SS({screen:'login',error:null})">Voltar</button>`;
 }
@@ -572,10 +586,36 @@ function rSv(){
   return ts;
 }
 function rSvCL(){
+  const nPend=S.mpend.length;
+  const alertBO=nPend>0?`<div style="background:#FBE7E4;border:1.5px solid var(--nok);border-radius:12px;padding:12px 15px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="SS({svTab:'checklists',clFilter:'todos',fPerfil:'mecanico'});ldCL('todos')"><div><div style="font-weight:700;color:var(--nok);font-size:15px;">🔧 ${nPend} BO${nPend>1?'s':''} aguardando mecânico</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">Problemas encaminhados ainda não resolvidos</div></div><span style="font-size:20px;">›</span></div>`:'';
   const fs=`<div class="frow"><button class="fbtn ${S.clFilter==='pendente'?'on':''}" onclick="setCLF('pendente')">Pendentes</button><button class="fbtn ${S.clFilter==='aprovado'?'on':''}" onclick="setCLF('aprovado')">Aprovados</button><button class="fbtn ${S.clFilter==='todos'?'on':''}" onclick="setCLF('todos')">Todos</button></div>`;
-  if(!S.allCL.length)return fs+`<div class="emp">Nenhum checklist.</div>`;
-  const its=S.allCL.map(h=>{const nk=(h.itens||[]).filter(i=>i.status==='nok'||i.status==='nao').length;return`<div class="lc" onclick="openDetail('${h.id}')"><div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div><div class="lp">${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span></div><div style="font-size:13px;color:var(--muted);margin-top:3px;">${h.usuario_nome}${nk>0?' · ⚠ '+nk+' problema(s)':' · tudo OK'}${h.encaminhado_mecanico?' · 🔧 enc.':''}${h.tipo_manutencao?' · '+h.tipo_manutencao:''}</div></div>`;}).join('');
-  return fs+its;
+  const filt=`<div class="fc" style="padding:12px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+      <div><label class="fl">Perfil</label><select onchange="S.fPerfil=this.value" style="margin-bottom:0;"><option value="">Todos</option><option value="motorista" ${S.fPerfil==='motorista'?'selected':''}>Motorista</option><option value="mecanico" ${S.fPerfil==='mecanico'?'selected':''}>Mecânico</option><option value="lavador" ${S.fPerfil==='lavador'?'selected':''}>Lavador</option></select></div>
+      <div><label class="fl">Placa</label><input type="text" placeholder="Ex: EVD" value="${S.fPlaca}" oninput="S.fPlaca=this.value" style="margin-bottom:0;"></div>
+    </div>
+    <div style="margin-bottom:8px;"><label class="fl">Usuário</label><input type="text" placeholder="Nome do usuário..." value="${S.fUsuario}" oninput="S.fUsuario=this.value" style="margin-bottom:0;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+      <div><label class="fl">De</label><input type="date" value="${S.fDataIni}" onchange="S.fDataIni=this.value" style="margin-bottom:0;"></div>
+      <div><label class="fl">Até</label><input type="date" value="${S.fDataFim}" onchange="S.fDataFim=this.value" style="margin-bottom:0;"></div>
+    </div>
+    <div style="display:flex;gap:8px;"><button class="bp" style="padding:10px;" onclick="applyFiltros()">Filtrar</button><button class="bs" style="padding:10px;margin-top:0;" onclick="limparFiltros()">Limpar</button></div>
+  </div>`;
+  if(!S.allCL.length)return alertBO+fs+filt+`<div class="emp">Nenhum checklist.</div>`;
+  const its=S.allCL.map(h=>{
+    const nk=(h.itens||[]).filter(i=>i.status==='nok'||i.status==='nao').length;
+    let tipoBadge='';
+    if(h.perfil==='mecanico'){
+      if(h.tipo_manutencao==='corretivo')tipoBadge=`<span style="font-size:10px;font-weight:700;background:#FBE7E4;color:var(--nok);padding:2px 7px;border-radius:100px;">CORRETIVO</span>`;
+      else if(h.tipo_manutencao==='preventivo')tipoBadge=`<span style="font-size:10px;font-weight:700;background:#DCEEE7;color:var(--ok);padding:2px 7px;border-radius:100px;">PREVENTIVO</span>`;
+    }
+    return`<div class="lc" onclick="openDetail('${h.id}')">
+      <div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div>
+      <div class="lp" style="display:flex;align-items:center;gap:7px;">${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span>${tipoBadge}</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:3px;">${h.usuario_nome}${nk>0?' · ⚠ '+nk+' problema(s)':' · tudo OK'}${h.encaminhado_mecanico?' · 🔧 enc.':''}</div>
+    </div>`;
+  }).join('');
+  return alertBO+fs+filt+its;
 }
 function rDet(){
   const h=S.selDetail;if(!h)return`<div class="emp">Não encontrado.</div>`;
@@ -681,6 +721,7 @@ function rSvAv(){
   const mp={};h.forEach(a=>{if(!a.motorista_id||a.nota_final===null)return;if(!mp[a.motorista_id])mp[a.motorista_id]={nome:a.motorista_nome,ns:[]};mp[a.motorista_id].ns.push(a.nota_final);});
   const rk=Object.values(mp).map(m=>({nome:m.nome,med:m.ns.reduce((s,n)=>s+n,0)/m.ns.length,q:m.ns.length})).sort((a,b)=>b.med-a.med);
   return`<h1 class="t">Avaliações de motoristas</h1>
+    <div class="erow" style="margin-bottom:14px;"><button class="ba" onclick="expAvXL()">⬇ Baixar Excel</button><button class="ba" onclick="expAvPPTX()">⬇ Baixar PowerPoint</button></div>
     <div class="cc"><h3>Ranking</h3><table class="ts"><thead><tr><th>#</th><th>Motorista</th><th>Média</th><th>Classe</th><th>Aval.</th></tr></thead><tbody>${rk.map((r,i)=>{const cl=clsNota(r.med);return`<tr><td style="font-weight:700;color:var(--muted);">${i+1}</td><td>${r.nome}</td><td style="font-weight:700;color:${cl.c}">${r.med.toFixed(1)}</td><td style="font-weight:700;color:${cl.c}">${cl.l}</td><td>${r.q}</td></tr>`;}).join('')}</tbody></table></div>
     <div class="cc"><h3>Recentes</h3>${h.slice(0,15).map(a=>{const cl=a.nota_final!==null?clsNota(a.nota_final):null;return`<div class="drow" style="flex-direction:column;align-items:flex-start;gap:2px;"><div style="display:flex;justify-content:space-between;width:100%;"><span style="font-weight:600;">${a.motorista_nome}</span>${cl?`<span style="font-weight:700;color:${cl.c}">${a.nota_final.toFixed(1)} — ${cl.l}</span>`:''}</div><div style="font-size:12px;color:var(--muted);">${fmtD(a.criado_em)} · ${a.inspetor_nome}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div></div>`;}).join('')}</div>`;
 }
