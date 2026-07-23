@@ -151,14 +151,14 @@ const TMPL={
     ['Limpeza do Veículo',['Cabine externa','Cabine interna','Painel','Para-brisa/retrovisores','Tanque de leite']],
     ['Pneus',['Dianteiro','Traseiro','Calibragem','Estepe']],
     ['Freios',['Freio dianteiro','Freio traseiro','Tambores','Lonas']],
-    ['Tanque de Leite',['Tampas','Suspiros','Borrachas','Agulhas']],
+    ['Tanque de Leite',['Tampas','Suspiros (verificar abertura)','Borrachas','Agulhas']],
     ['Segurança',['Cinto de segurança','Macaco','Chave de rodas']],
     ['Câmeras',['Câmera dianteira','Câmera do motorista','Posicionamento/alinhamento correto','Lente limpa/visibilidade']]
   ]},
   mecanico:{ss:['ok','nok','na'],ps:'nok',mrp:true,ur:false,rk:true,sec:[
     ['Pneus',['Dianteiro','Traseiro','Calibragem','Estepe']],
     ['Freios',['Lubrificação','Freio dianteiro','Freio traseiro','Tambores','Lonas']],
-    ['Tanque de Leite',['Tampa','Suspiros','Borrachas','Agulhas']],
+    ['Tanque de Leite',['Tampa','Suspiros (verificar abertura)','Borrachas','Agulhas']],
     ['Luzes',['Setas e pisca alerta','Farolete','Farol alto e farol baixo','Luz de freio e luz de ré','Buzina']],
     ['Suspensão',['Amortecedor','Molas','Jumelo traseiro','Jumelo dianteiro']],
     ['Reaperto',['Feixe de mola','Tanque','Bomba de leite']]
@@ -189,7 +189,9 @@ let S={
   editCL:null,
   avMid:null,avResp:{p:{},v:{}},avObs:'',avVeic:'',avRota:'',
   avHist:[],avScreen:'inicio',
-  drillItem:null,drillCL:[]
+  drillItem:null,drillCL:[],
+  andamentoId:null,
+  boAtual:null
 };
 const app=document.getElementById('app');
 function SS(p){S={...S,...p};render();}
@@ -213,7 +215,16 @@ async function ldCL(f){
   if(S.fUsuario){const q2=S.fUsuario.toLowerCase();cls=cls.filter(c=>c.usuario_nome.toLowerCase().includes(q2));}
   SS({allCL:cls});
 }
-async function ldMP(){const{data}=await sb.from('manutencoes').select('*').eq('status','pendente').order('criado_em',{ascending:false});SS({mpend:data||[]});}
+async function ldMP(){
+  const uid=S.cu?S.cu.id:null;
+  // Buscar pendentes + em atendimento por este mecânico
+  const[r1,r2]=await Promise.all([
+    sb.from('manutencoes').select('*').eq('status','pendente').order('criado_em',{ascending:false}),
+    uid?sb.from('manutencoes').select('*').eq('status','em_atendimento').eq('puxado_por_id',uid).order('criado_em',{ascending:false}):Promise.resolve({data:[]})
+  ]);
+  const todos=[...(r1.data||[]),...(r2.data||[])].sort((a,b)=>new Date(b.criado_em)-new Date(a.criado_em));
+  SS({mpend:todos});
+}
 async function ldAH(){const{data}=await sb.from('avaliacoes').select('*').order('criado_em',{ascending:false}).limit(100);SS({avHist:data||[]});}
 
 function buR(q){
@@ -297,18 +308,33 @@ async function submitCL(){
   try{
     const fu=[];for(const f of S.fotos)fu.push(await upFoto(f));
     const ip=[];for(const it of S.itens){const ifu=[];for(const f of it.fotos)ifu.push(await upFoto(f));ip.push({secao:it.secao,item:it.item,status:it.status,motivo:it.motivo||'',fotos:ifu});}
+    const temNOK=ip.some(i=>i.status==='nok');
+    const statusAuto=(tp==='motorista'&&temNOK)?'encaminhado':'pendente';
     const pl={
       usuario_id:S.cu.id,usuario_nome:S.cu.nome,
       veiculo_id:S.selV.id,veiculo_placa:S.selV.placa,veiculo_modelo:S.selV.modelo||null,
       perfil:tp,tacografo:S.taco||null,km:S.km?Number(S.km):null,
       motorista_relacionado:S.motRel||null,itens:ip,
-      observacoes_gerais:S.obsG||null,fotos:fu,status:'pendente',encaminhado_mecanico:false
+      observacoes_gerais:S.obsG||null,fotos:fu,
+      status:(tp==='motorista'&&temNOK)?'aprovado':'pendente',
+      encaminhado_mecanico:(tp==='motorista'&&temNOK),
+      encaminhado_em:(tp==='motorista'&&temNOK)?new Date().toISOString():null
     };
     if(tpl.ur)pl.rota=S.selRota?S.selRota.nome:null;
     if(tp==='motorista')pl.tipo_rota=S.tipoRota;
     if(tp==='mecanico'){pl.motivo=S.motivo||null;pl.abastecido=S.abast;pl.tipo_manutencao=S.resolvMid?'corretivo':'preventivo';}
     const{data:ins,error}=await sb.from('checklists').insert(pl).select().single();
     if(error)throw error;
+    // Se motorista com NOK, criar manutenção automaticamente
+    if(tp==='motorista'&&temNOK){
+      const probs=ip.filter(i=>i.status==='nok').map(i=>({secao:i.secao,item:i.item,motivo:i.motivo||''}));
+      await sb.from('manutencoes').insert({
+        veiculo_id:S.selV.id,veiculo_placa:S.selV.placa,
+        origem_checklist_id:ins.id,origem_usuario_nome:S.cu.nome,
+        itens:probs,status:'pendente',
+        checklist_origem_bo:ins.bo_numero
+      });
+    }
     if(S.resolvMid)await sb.from('manutencoes').update({status:'resolvido',resolvido_checklist_id:ins.id,resolvido_por:S.cu.nome,resolvido_em:new Date().toISOString()}).eq('id',S.resolvMid);
     SS({submitting:false,screen:'ok'});
   }catch(e){SS({submitting:false,error:'Erro: '+e.message});}
@@ -493,7 +519,7 @@ function render(){
     ${S.cu?`<div class="uchip">${S.cu.nome}<br>${PL[S.cu.perfil]} · <button onclick="logout()">sair</button></div>`:''}
   </header><main><div class="screen">`;
   if(S.error)h+=`<div class="err">${S.error}</div>`;
-  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill};
+  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill,bo_checklist:rBOChecklist};
   h+=(rs[S.screen]||rLogin)();
   h+=`</div></main>`;app.innerHTML=h;
 }
@@ -543,7 +569,8 @@ function rSetup(){
     <input type="number" placeholder="Ex: 152340" value="${S.km}" oninput="S.km=this.value">
     ${ex}${rb}
     <button class="bp" onclick="startCL()">Iniciar checklist</button>
-    <button class="bs" onclick="showHist()">Ver meu histórico</button>`;
+    <button class="bs" onclick="showHist()">Ver meu histórico</button>
+    <button class="bs" onclick="logout()" style="margin-top:6px;border-color:var(--muted);color:var(--muted);">← Sair</button>`;
 }
 function rCL(){
   const tp=S.cu.perfil;const tpl=TMPL[tp];
@@ -563,18 +590,50 @@ function rCL(){
   const ab=tp==='mecanico'?`<div class="sb"><div class="sh"><span class="sn">${String(sn+1).padStart(2,'0')}</span><span class="sname">Abastecimento</span></div><div class="trow"><button type="button" class="tbtn ${S.abast===true?'on':''}" onclick="SS({abast:true})">Sim</button><button type="button" class="tbtn ${S.abast===false?'on':''}" onclick="SS({abast:false})">Não</button></div></div>`:'';
   const obs=`<div class="sb"><label class="fl">${tp==='mecanico'?'O que foi feito / peças trocadas':'Observações'}</label><textarea placeholder="Detalhes, serviços realizados..." oninput="S.obsG=this.value">${S.obsG}</textarea><label class="fl">Fotos (opcional)</label><div class="pstrip">${S.fp.map(p=>`<a href="${p}" target="_blank"><img class="pthumb" src="${p}"></a>`).join('')}</div><label class="padd">📷 Adicionar foto<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addF(this.files)"></label></div>`;
   return`<h1 class="t">${PL[tp]} — ${S.selV.placa}</h1><p class="s">Marque o status de cada item.</p>${sh}${ab}${obs}
-    <div class="sfooter"><div class="ppill">${mc} de ${tot} marcados</div><button class="bp" ${S.submitting?'disabled':''} onclick="submitCL()">${S.submitting?'Enviando...':'Enviar checklist'}</button></div>`;
+    <div class="sfooter"><div class="ppill">${mc} de ${tot} marcados</div><button class="bp" ${S.submitting?'disabled':''} onclick="submitCL()">${S.submitting?'Enviando...':'Enviar checklist'}</button><button class="bs" style="margin-top:8px;" onclick="SS({screen:'setup',error:null})">← Voltar</button></div>`;
 }
 function rOk(){return`<div class="sw"><div class="stamp">CONCLUÍDO</div><div class="sd">Checklist do veículo ${S.selV.placa} enviado.</div><button class="bp" onclick="newCL()">Novo checklist</button><button class="bs" onclick="showHist()">Ver histórico</button></div>`;}
 function rHist(){
-  if(!S.history.length)return`<h1 class="t">Histórico</h1><div class="emp">Nenhum checklist ainda.</div><button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
-  const its=S.history.map(h=>{const nk=(h.itens||[]).filter(i=>i.status==='nok'||i.status==='nao').length;return`<div class="lc"><div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div><div class="lp">${h.veiculo_placa}</div>${nk>0?`<div style="color:var(--nok);font-size:13px;margin-top:3px;">⚠ ${nk} problema(s)</div>`:`<div style="color:var(--ok);font-size:13px;margin-top:3px;">✓ Tudo OK</div>`}</div>`;}).join('');
-  return`<h1 class="t">Seu histórico</h1>${its}<button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
+  const back=`<button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
+  if(!S.history.length)return`<h1 class="t">Histórico</h1><div class="emp">Nenhum checklist ainda.</div>${back}`;
+  const its=S.history.map(h=>{
+    const nk=(h.itens||[]).filter(i=>i.status==='nok'||i.status==='nao').length;
+    const nkItens=h.itens?h.itens.filter(i=>i.status==='nok'||i.status==='nao'):[];
+    return`<div class="lc" onclick="SS({selDetail:null})" style="cursor:default;">
+      <div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div>
+      <div class="lp">${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span></div>
+      <div style="font-size:13px;color:var(--muted);margin-top:2px;">${h.usuario_nome}</div>
+      ${nk>0?`<div style="color:var(--nok);font-size:13px;margin-top:3px;">⚠ ${nk} problema(s)</div>${nkItens.map(i=>`<div style="font-size:12px;color:var(--muted);margin-left:8px;">• ${i.item}${i.motivo?': '+i.motivo:''}</div>`).join('')}`:`<div style="color:var(--ok);font-size:13px;margin-top:3px;">✓ Tudo OK</div>`}
+    </div>`;
+  }).join('');
+  return`<h1 class="t">Histórico</h1>${its}${back}`;
 }
 function rMP(){
-  if(!S.mpend.length)return`<h1 class="t">Veículos com problema</h1><div class="emp">Nenhuma pendência. 🎉</div><button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
-  const its=S.mpend.map(m=>`<div class="lc"><div class="ltop"><span>${fmtD(m.criado_em)}</span><span>Por ${m.origem_usuario_nome}</span></div><div class="lp">${m.veiculo_placa}</div>${m.itens.map(i=>`<div style="font-size:13px;color:var(--muted);margin-top:3px;">• ${i.secao} — ${i.item}${i.motivo?': '+i.motivo:''}</div>`).join('')}<button class="bp" style="margin-top:9px;" onclick="resolverM('${m.id}')">Resolver este</button></div>`).join('');
-  return`<h1 class="t">Veículos com problema</h1><p class="s">Escolha um para abrir o checklist.</p>${its}<button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
+  if(!S.mpend.length)return`<h1 class="t">Veículos com problema</h1><div class="emp">Nenhuma pendência no momento. 🎉</div><button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
+  const its=S.mpend.map(m=>{
+    const isAtend=m.status==='em_atendimento';
+    const cor=isAtend?'var(--amber)':'var(--nok)';
+    const boNum=m.checklist_origem_bo?`BO#${m.checklist_origem_bo}`:'';
+    return`<div class="lc" style="border-color:${cor};">
+      <div class="ltop">
+        <span>${boNum?`<span style="font-family:var(--mono);font-weight:700;color:var(--blue);">${boNum}</span> · `:''} ${fmtD(m.criado_em)}</span>
+        <span style="font-weight:700;color:${cor};font-size:11px;">${isAtend?'EM ATENDIMENTO':'PENDENTE'}</span>
+      </div>
+      <div class="lp">${m.veiculo_placa}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">
+        Reportado por ${m.origem_usuario_nome}
+        ${isAtend?` · <strong>Você está atendendo${m.puxado_em?' desde '+fmtD(m.puxado_em):''}</strong>`:''}
+        ${m.iniciado_por&&!isAtend?` · Última intervenção: ${m.iniciado_por}`:''}
+      </div>
+      ${m.itens.map(i=>`<div style="font-size:13px;color:var(--nok);margin-top:3px;">⚠ ${i.item}${i.motivo?': '+i.motivo:''}</div>`).join('')}
+      ${isAtend
+        ?`<button class="bp" style="margin-top:9px;" onclick="SS({boAtual:S.mpend.find(x=>x.id==='${m.id}'),screen:'bo_checklist'})">Abrir e resolver</button>
+          <button class="bs" style="margin-top:6px;" onclick="devolverBO('${m.id}')">Devolver pra fila</button>`
+        :`<button class="bp" style="margin-top:9px;" onclick="puxarBO('${m.id}')">Puxar para mim</button>`
+      }
+    </div>`;
+  }).join('');
+  return`<h1 class="t">Veículos com problema</h1><p class="s">Clique em "Puxar para mim" para atender um BO.</p>${its}<button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
 }
 function rSv(){
   const ts=`<div class="tabs"><button class="tab ${S.svTab==='checklists'?'on':''}" onclick="svTab('checklists')">Checklists</button><button class="tab ${S.svTab==='equipe'?'on':''}" onclick="svTab('equipe')">Equipe</button><button class="tab ${S.svTab==='veiculos'?'on':''}" onclick="svTab('veiculos')">Veículos</button><button class="tab ${S.svTab==='rotas'?'on':''}" onclick="svTab('rotas')">Rotas</button><button class="tab ${S.svTab==='relatorios'?'on':''}" onclick="svTab('relatorios')">Relatórios</button><button class="tab ${S.svTab==='avaliacoes'?'on':''}" onclick="svTab('avaliacoes')">Avaliações</button></div>`;
@@ -612,7 +671,7 @@ function rSvCL(){
     }
     return`<div class="lc" onclick="openDetail('${h.id}')">
       <div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div>
-      <div class="lp" style="display:flex;align-items:center;gap:7px;">${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span>${tipoBadge}</div>
+      <div class="lp" style="display:flex;align-items:center;gap:7px;">${h.bo_numero?`<span style="font-family:var(--mono);font-size:11px;color:var(--muted);">BO#${h.bo_numero}</span>`:""} ${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span>${tipoBadge}</div>
       <div style="font-size:13px;color:var(--muted);margin-top:3px;">${h.usuario_nome}${nk>0?' · ⚠ '+nk+' problema(s)':' · tudo OK'}${h.encaminhado_mecanico?' · 🔧 enc.':''}</div>
     </div>`;
   }).join('');
@@ -850,6 +909,136 @@ function rDrill(){
     <p class="s">${cls.length} checklist(s) com este problema</p>
     ${cards}
     <button class="bs" onclick="SS({screen:'sv',svTab:'relatorios'})">Voltar ao relatório</button>`;
+}
+
+function rBOChecklist(){
+  const m=S.boAtual;
+  if(!m)return`<div class="emp">BO não encontrado.</div><button class="bs" onclick="SS({screen:'mpend'})">Voltar</button>`;
+  const boNum=m.checklist_origem_bo?`BO#${m.checklist_origem_bo}`:'BO';
+  if(!m.itensAtual)m.itensAtual=m.itens.map(i=>({...i,status:'nok',resolvidoPor:'',obsItem:''}));
+  const rows=m.itensAtual.map((it,idx)=>{
+    const resolvido=it.status==='ok';
+    return`<div class="lc" style="border-color:${resolvido?'var(--ok)':'var(--nok)'};margin-bottom:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div style="flex:1;">
+          <div style="font-size:13px;color:var(--muted);">${it.secao}</div>
+          <div style="font-weight:600;font-size:14px;">${it.item}</div>
+          ${it.motivo?`<div style="font-size:12px;color:var(--nok);margin-top:2px;">⚠ Problema: ${it.motivo}</div>`:''}
+          ${resolvido?`<div style="font-size:12px;color:var(--ok);margin-top:4px;">✓ Resolvido por ${S.cu.nome}</div>`:''}
+          ${resolvido?`<input type="text" placeholder="O que foi feito neste item..." value="${it.obsItem||''}" oninput="S.boAtual.itensAtual[${idx}].obsItem=this.value" style="margin-top:6px;margin-bottom:0;font-size:13px;padding:8px 10px;">`:''}
+        </div>
+        <button class="${resolvido?'bp':'ba'}" style="flex-shrink:0;padding:10px 14px;margin-top:0;width:auto;" onclick="toggleBOItem(${idx})">
+          ${resolvido?'✓ OK':'Pendente'}
+        </button>
+      </div>
+    </div>`;
+  }).join('');
+  const pendentes=m.itensAtual.filter(i=>i.status==='nok').length;
+  const resolvidos=m.itensAtual.filter(i=>i.status==='ok').length;
+  const corStatus=pendentes>0?'#FBE7E4':'#DCEEE7';
+  const corTxt=pendentes>0?'var(--nok)':'var(--ok)';
+  return`
+    <h1 class="t">${boNum} — ${m.veiculo_placa}</h1>
+    <p class="s">Marque os itens resolvidos. Os pendentes voltam pra fila com seu nome registrado.</p>
+    <div style="background:${corStatus};border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;color:${corTxt};font-weight:600;">
+      ${pendentes>0?`⚠ ${pendentes} pendente(s)`:'✓ Tudo resolvido!'} · ✓ ${resolvidos} resolvido(s)
+    </div>
+    ${rows}
+    <label class="fl" style="margin-top:12px;">Observação geral (opcional)</label>
+    <textarea id="bo-obs" placeholder="Resumo geral do que foi feito..." style="margin-bottom:12px;"></textarea>
+    <button class="bp" onclick="submitBOParcial('${m.id}',S.boAtual.itensAtual,document.getElementById('bo-obs').value)">
+      ${pendentes===0?'✓ Concluir BO — tudo resolvido':'Salvar progresso e devolver pendentes'}
+    </button>
+    <button class="bs" onclick="devolverBO('${m.id}')">Devolver tudo sem resolver</button>
+  `;
+}
+
+
+async function puxarBO(mid){
+  const m=S.mpend.find(x=>x.id===mid);
+  if(!m)return;
+  // Tenta atualizar no banco, mas abre a tela mesmo se falhar (simulação local)
+  try{
+    await sb.from('manutencoes').update({
+      status:'em_atendimento',
+      puxado_por:S.cu.nome,
+      puxado_por_id:S.cu.id,
+      puxado_em:new Date().toISOString()
+    }).eq('id',mid);
+  }catch(e){}
+  const boAtual={...m,itensAtual:m.itens.map(i=>({...i,status:'nok'}))};
+  SS({boAtual,screen:'bo_checklist',error:null});
+}
+
+async function devolverBO(mid){
+  try{
+    await sb.from('manutencoes').update({
+      status:'pendente',puxado_por:null,puxado_por_id:null,puxado_em:null
+    }).eq('id',mid);
+  }catch(e){}
+  SS({boAtual:null,screen:'mpend',error:null});
+  await ldMP();
+}
+
+async function submitBOParcial(mid,itensAtualizados,obs){
+  const m=S.boAtual;
+  if(!m)return;
+  const pendentes=itensAtualizados.filter(i=>i.status==='nok');
+  try{
+    // Enriquecer itens resolvidos com quem resolveu
+    const itensComAutor=itensAtualizados.map(i=>({
+      ...i,
+      resolvidoPor:i.status==='ok'?S.cu.nome:null,
+      obsItem:i.obsItem||''
+    }));
+    if(pendentes.length>0){
+      // Ainda tem pendências: volta pra fila só com os pendentes
+      const itensPendentes=pendentes.map(i=>({secao:i.secao,item:i.item,motivo:i.motivo||'',status:'nok'}));
+      await sb.from('manutencoes').update({
+        itens:itensPendentes,
+        status:'pendente',
+        puxado_por:null,puxado_por_id:null,puxado_em:null,
+        iniciado_por:S.cu.nome,iniciado_em:new Date().toISOString()
+      }).eq('id',mid);
+      // Registra o que foi resolvido parcialmente nas observações
+      const obsResolvidos=itensComAutor.filter(i=>i.status==='ok').map(i=>`✓ ${i.item}${i.obsItem?': '+i.obsItem:''} (${i.resolvidoPor})`).join('\n');
+      if(obsResolvidos){
+        await sb.from('checklists').insert({
+          usuario_id:S.cu.id,usuario_nome:S.cu.nome,
+          veiculo_id:m.veiculo_id,veiculo_placa:m.veiculo_placa,
+          perfil:'mecanico',itens:itensComAutor.filter(i=>i.status==='ok'),
+          observacoes_gerais:`Resolução parcial do BO.\n${obsResolvidos}\n${obs||''}`,
+          status:'pendente',tipo_manutencao:'corretivo',
+          bo_origem_id:m.origem_checklist_id
+        });
+      }
+    } else {
+      // Tudo resolvido: cria checklist corretivo final e fecha o BO
+      const obsTotal=itensComAutor.filter(i=>i.status==='ok').map(i=>`✓ ${i.item}${i.obsItem?': '+i.obsItem:''} (${i.resolvidoPor})`).join('\n');
+      const{data:ins}=await sb.from('checklists').insert({
+        usuario_id:S.cu.id,usuario_nome:S.cu.nome,
+        veiculo_id:m.veiculo_id,veiculo_placa:m.veiculo_placa,
+        perfil:'mecanico',itens:itensComAutor,
+        observacoes_gerais:`BO concluído.\n${obsTotal}\n${obs||''}`.trim(),
+        status:'pendente',tipo_manutencao:'corretivo',
+        bo_origem_id:m.origem_checklist_id
+      }).select().single();
+      await sb.from('manutencoes').update({
+        status:'resolvido',
+        resolvido_checklist_id:ins?ins.id:null,
+        resolvido_por:S.cu.nome,
+        resolvido_em:new Date().toISOString()
+      }).eq('id',mid);
+    }
+  }catch(e){SS({error:'Erro ao salvar: '+e.message});return;}
+  SS({boAtual:null,screen:'mpend',error:null});
+  await ldMP();
+}
+
+function toggleBOItem(idx){
+  const m=S.boAtual;
+  m.itensAtual[idx].status=m.itensAtual[idx].status==='ok'?'nok':'ok';
+  SS({boAtual:{...m}});
 }
 
 </script>
