@@ -785,6 +785,26 @@ async function expPPTX(){
   await pptx.writeFile({fileName:'relatorio-checklistop.pptx'});
 }
 
+
+// ---- DRILL-DOWN ----
+function drillVeiculo(placa){
+  S.fPlaca=placa;S.fPerfil='';S.fUsuario='';S.fDataIni='';S.fDataFim='';
+  SS({svTab:'checklists',clFilter:'todos',drillCL:[],drillItem:null});
+  ldCL('todos');
+}
+function drillProblema(itemKey){
+  SS({drillItem:itemKey,drillCL:[],screen:'drill'});
+  ldDrill(itemKey);
+}
+async function ldDrill(itemKey){
+  const{data}=await sb.from('checklists').select('*').order('criado_em',{ascending:false}).limit(500);
+  const cls=(data||[]).filter(c=>(c.itens||[]).some(i=>{
+    const k=i.secao+' — '+i.item;
+    return k===itemKey&&(i.status==='nok'||i.status==='nao');
+  }));
+  SS({drillCL:cls});
+}
+
 async function initApp(){
   let sv=null;try{sv=JSON.parse(localStorage.getItem('cop_s')||'null');}catch(e){}
   if(!sv||!sv.id){render();return;}
@@ -806,14 +826,19 @@ async function initApp(){
 }
 initApp();
 
+function openDrillDetail(idx){
+  const h=S.drillCL[idx];
+  if(!h)return;
+  SS({selDetail:h,screen:'det'});
+}
 function rDrill(){
   const itKey=S.drillItem;
   const cls=S.drillCL;
   const titulo=itKey||'Detalhes';
-  const loading=!cls.length&&S.drillItem?'<div class="ldg">Carregando...</div>':'';
-  const cards=cls.map(h=>{
+  if(!cls.length)return`<h1 class="t" style="font-size:17px;">${titulo}</h1><div class="ldg">Carregando...</div><button class="bs" onclick="SS({screen:'sv',svTab:'relatorios'})">Voltar</button>`;
+  const cards=cls.map((h,idx)=>{
     const it=(h.itens||[]).find(i=>(i.secao+' — '+i.item)===itKey&&(i.status==='nok'||i.status==='nao'));
-    return`<div class="lc" onclick="SS({selDetail:${JSON.stringify(h)},screen:'det'})">
+    return`<div class="lc" onclick="openDrillDetail(${idx})">
       <div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div>
       <div class="lp">${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span></div>
       <div style="font-size:13px;color:var(--muted);margin-top:3px;">${h.usuario_nome}</div>
@@ -823,7 +848,7 @@ function rDrill(){
   }).join('');
   return`<h1 class="t" style="font-size:17px;">${titulo}</h1>
     <p class="s">${cls.length} checklist(s) com este problema</p>
-    ${loading}${cards}
+    ${cards}
     <button class="bs" onclick="SS({screen:'sv',svTab:'relatorios'})">Voltar ao relatório</button>`;
 }
 
