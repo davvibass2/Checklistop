@@ -188,7 +188,8 @@ let S={
   mpend:[],resolvMid:null,resolvMitens:null,
   editCL:null,
   avMid:null,avResp:{p:{},v:{}},avObs:'',avVeic:'',avRota:'',
-  avHist:[],avScreen:'inicio'
+  avHist:[],avScreen:'inicio',
+  drillItem:null,drillCL:[]
 };
 const app=document.getElementById('app');
 function SS(p){S={...S,...p};render();}
@@ -233,7 +234,7 @@ function buRota(q){
 function flRota(v){S.rq=v;const el=document.getElementById('rr');if(el)el.innerHTML=buRota(v);}
 function pickRota(id){const r=S.rotas.find(x=>x.id===id);SS({selRota:r,rq:'',error:null});}
 
-async function pickU(uid){const u=S.usuarios.find(x=>x.id===uid);SS({selU:u,screen:'pin',error:null,lq:''});}
+async function pickU(uid){const u=S.usuarios.find(x=>x.id===uid);SS({selU:u,screen:'pin',error:null,lq:''});setTimeout(()=>{const el=document.getElementById('pi');if(el)el.focus();},100);}
 
 async function confirmPin(pin){
   if(!pin||pin.length!==4){SS({error:'Digite os 4 dígitos.'});return;}
@@ -492,7 +493,7 @@ function render(){
     ${S.cu?`<div class="uchip">${S.cu.nome}<br>${PL[S.cu.perfil]} · <button onclick="logout()">sair</button></div>`:''}
   </header><main><div class="screen">`;
   if(S.error)h+=`<div class="err">${S.error}</div>`;
-  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp};
+  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill};
   h+=(rs[S.screen]||rLogin)();
   h+=`</div></main>`;app.innerHTML=h;
 }
@@ -696,8 +697,8 @@ function rSvRel(){
   const r=S.report;
   const pf=`<div class="frow np"><button class="fbtn ${S.rPeriod==='mes_atual'?'on':''}" onclick="setRP('mes_atual')">Mês atual</button><button class="fbtn ${S.rPeriod==='mes_passado'?'on':''}" onclick="setRP('mes_passado')">Mês passado</button><button class="fbtn ${S.rPeriod==='ultimos_30'?'on':''}" onclick="setRP('ultimos_30')">Últimos 30d</button><button class="fbtn ${S.rPeriod==='tudo'?'on':''}" onclick="setRP('tudo')">Tudo</button></div>
   <div class="np" style="display:flex;gap:7px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;"><div style="flex:1;min-width:125px;"><label class="fl">De</label><input type="date" id="rs" value="${S.rStart}" style="margin-bottom:0;"></div><div style="flex:1;min-width:125px;"><label class="fl">Até</label><input type="date" id="re" value="${S.rEnd}" style="margin-bottom:0;"></div><button class="fbtn ${S.rPeriod==='custom'?'on':''}" style="padding:12px 15px;" onclick="applyCP()">Aplicar</button></div>`;
-  const vt=r.tv.length?`<div class="cc"><h3>Veículos com mais problemas</h3><table class="ts"><thead><tr><th>Placa</th><th>Checklists</th><th>Problemas</th></tr></thead><tbody>${r.tv.map(([p,d])=>`<tr><td>${p}</td><td>${d.t}</td><td>${d.p}</td></tr>`).join('')}</tbody></table></div>`:'';
-  const pt=r.tp2.length?`<div class="cc"><h3>Problemas mais frequentes</h3><table class="ts"><thead><tr><th>Item</th><th>Ocorrências</th></tr></thead><tbody>${r.tp2.map(([i,n])=>`<tr><td>${i}</td><td>${n}</td></tr>`).join('')}</tbody></table></div>`:'';
+  const vt=r.tv.length?`<div class="cc"><h3>Veículos com mais problemas</h3><table class="ts"><thead><tr><th>Placa</th><th>Checklists</th><th>Problemas</th></tr></thead><tbody>${r.tv.map(([p,d])=>`<tr><td style="cursor:pointer;color:var(--blue);font-weight:600;" onclick="drillVeiculo('${p}')">${p}</td><td style="cursor:pointer;color:var(--blue);" onclick="drillVeiculo('${p}')">${d.t}</td><td style="cursor:pointer;color:${d.p>0?'var(--nok)':'inherit'};font-weight:${d.p>0?'700':'400'};" onclick="drillVeiculo('${p}')">${d.p}</td></tr>`).join('')}</tbody></table></div>`:'';
+  const pt=r.tp2.length?`<div class="cc"><h3>Problemas mais frequentes</h3><table class="ts"><thead><tr><th>Item</th><th>Ocorrências</th></tr></thead><tbody>${r.tp2.map(([i,n])=>`<tr style="cursor:pointer;" onclick="drillProblema('${i}')"><td style="color:var(--blue);">${i}</td><td style="color:var(--nok);font-weight:700;">${n}</td></tr>`).join('')}</tbody></table></div>`:'';
   const pe=`<div class="cc"><h3>Checklists por pessoa</h3><table class="ts"><thead><tr><th>Nome</th><th>Checklists</th></tr></thead><tbody>${r.tpe.map(([n,c])=>`<tr><td>${n}</td><td>${c}</td></tr>`).join('')}</tbody></table></div>`;
   setTimeout(renderCharts,0);
   return`<div id="pr"><h1 class="t">Relatório geral</h1><p class="s">${r.label}</p>${pf}
@@ -804,6 +805,27 @@ async function initApp(){
   }
 }
 initApp();
+
+function rDrill(){
+  const itKey=S.drillItem;
+  const cls=S.drillCL;
+  const titulo=itKey||'Detalhes';
+  const loading=!cls.length&&S.drillItem?'<div class="ldg">Carregando...</div>':'';
+  const cards=cls.map(h=>{
+    const it=(h.itens||[]).find(i=>(i.secao+' — '+i.item)===itKey&&(i.status==='nok'||i.status==='nao'));
+    return`<div class="lc" onclick="SS({selDetail:${JSON.stringify(h)},screen:'det'})">
+      <div class="ltop"><span>${fmtD(h.criado_em)}</span><span class="bdg ${h.status}">${h.status==='aprovado'?'Aprovado':'Pendente'}</span></div>
+      <div class="lp">${h.veiculo_placa} <span class="bdg ${h.perfil}">${PL[h.perfil]}</span></div>
+      <div style="font-size:13px;color:var(--muted);margin-top:3px;">${h.usuario_nome}</div>
+      ${it&&it.motivo?`<div style="font-size:13px;color:var(--nok);margin-top:3px;">📝 ${it.motivo}</div>`:''}
+      ${(it&&it.fotos&&it.fotos.length)?`<div class="pstrip" style="margin-top:6px;">${it.fotos.map(u=>`<a href="${u}" target="_blank"><img class="pthumb" src="${u}"></a>`).join('')}</div>`:''}
+    </div>`;
+  }).join('');
+  return`<h1 class="t" style="font-size:17px;">${titulo}</h1>
+    <p class="s">${cls.length} checklist(s) com este problema</p>
+    ${loading}${cards}
+    <button class="bs" onclick="SS({screen:'sv',svTab:'relatorios'})">Voltar ao relatório</button>`;
+}
 
 </script>
 </body>
