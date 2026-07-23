@@ -191,7 +191,8 @@ let S={
   avHist:[],avScreen:'inicio',
   drillItem:null,drillCL:[],
   andamentoId:null,
-  boAtual:null
+  boAtual:null,
+  confirmDel:null
 };
 const app=document.getElementById('app');
 function SS(p){S={...S,...p};render();}
@@ -369,9 +370,44 @@ async function encaminhar(id){
   await ldCL(S.clFilter);
 }
 async function delCL(id){
-  if(!confirm('Excluir este checklist definitivamente?'))return;
-  await sb.from('checklists').delete().eq('id',id);
-  SS({screen:'sv'});await ldCL(S.clFilter);
+  SS({confirmDel:id});
+}
+async function confirmDelCL(){
+  const id=S.confirmDel;
+  if(!id)return;
+  try{
+    // 1. Buscar o bo_numero desse checklist
+    const h=S.selDetail;
+    const boNum=h?h.bo_numero:null;
+
+    // 2. Apagar todas as manutenções vinculadas a esse checklist
+    await sb.from('manutencoes').delete().eq('origem_checklist_id',id);
+    await sb.from('manutencoes').delete().eq('resolvido_checklist_id',id);
+
+    // 3. Se tem bo_numero, apagar todos os checklists do mesmo BO (histórico completo)
+    if(boNum){
+      // Primeiro limpar referências entre eles
+      const{data:irmãos}=await sb.from('checklists').select('id').eq('bo_numero',boNum);
+      const ids=(irmãos||[]).map(x=>x.id);
+      for(const cid of ids){
+        await sb.from('manutencoes').delete().eq('origem_checklist_id',cid);
+        await sb.from('manutencoes').delete().eq('resolvido_checklist_id',cid);
+      }
+      // Apagar checklists filhos (bo_origem_id apontando pra este)
+      await sb.from('checklists').update({bo_origem_id:null}).eq('bo_numero',boNum);
+      // Apagar todos do mesmo BO
+      await sb.from('checklists').delete().eq('bo_numero',boNum);
+    } else {
+      // Sem bo_numero: apagar só este
+      await sb.from('checklists').update({bo_origem_id:null}).eq('bo_origem_id',id);
+      await sb.from('checklists').delete().eq('id',id);
+    }
+
+    SS({screen:'sv',confirmDel:null,selDetail:null,error:null});
+    await ldCL(S.clFilter);
+  }catch(e){
+    SS({error:'Erro ao excluir: '+e.message,confirmDel:null});
+  }
 }
 function openDetail(id){const c=S.allCL.find(x=>x.id===id);SS({selDetail:c,screen:'det'});}
 
@@ -702,7 +738,16 @@ function rDet(){
     ${h.status==='pendente'?`<button class="bp np" onclick="approveCL('${h.id}')">Aprovar checklist</button>`:`<p class="s">Aprovado por ${h.aprovado_por} em ${fmtD(h.aprovado_em)}</p>`}
     ${(h.perfil==='motorista'&&(h.itens||[]).some(i=>i.status==='nok'))?(h.encaminhado_mecanico?`<p class="s">🔧 Encaminhado em ${fmtD(h.encaminhado_em)}</p>`:`<button class="ba np" onclick="encaminhar('${h.id}')">🔧 Encaminhar para mecânico</button>`
     ):''}
-    <button class="ib d np" style="width:100%;padding:12px;margin-top:9px;" onclick="delCL('${h.id}')">Excluir (preenchido por engano)</button>
+    ${S.confirmDel===h.id
+      ?`<div style="background:#FBE7E4;border:1.5px solid var(--nok);border-radius:10px;padding:12px 14px;margin-top:9px;">
+          <div style="font-size:14px;font-weight:600;color:var(--nok);margin-bottom:10px;">Confirmar exclusão definitiva?</div>
+          <div style="display:flex;gap:8px;">
+            <button class="bp" style="background:var(--nok);" onclick="confirmDelCL()">Sim, excluir</button>
+            <button class="bs" style="margin-top:0;" onclick="SS({confirmDel:null})">Cancelar</button>
+          </div>
+        </div>`
+      :`<button class="ib d np" style="width:100%;padding:12px;margin-top:9px;" onclick="delCL('${h.id}')">Excluir (preenchido por engano)</button>`
+    }
     <button class="bs np" onclick="SS({screen:'sv'})">Voltar</button>`;
 }
 function rEdit(){
