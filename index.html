@@ -253,7 +253,7 @@ async function confirmPin(pin){
   if(pin!==S.selU.pin){SS({error:'Senha incorreta.'});return;}
   const cu={id:S.selU.id,nome:S.selU.nome,perfil:S.selU.perfil};
   try{localStorage.setItem('cop_s',JSON.stringify(cu));}catch(e){}
-  if(cu.perfil==='supervisor'){SS({cu,screen:'sv',error:null,svTab:'checklists'});await ldCL('pendente');}
+  if(cu.perfil==='supervisor'){SS({cu,screen:'sv',error:null,svTab:'checklists'});await Promise.all([ldCL('pendente'),ldMP()]);}
   else if(cu.perfil==='inspetor'){
     const[m,v,r]=await Promise.all([
       sb.from('usuarios').select('id,nome').eq('perfil','motorista').eq('ativo',true).order('nome'),
@@ -555,7 +555,7 @@ function render(){
     ${S.cu?`<div class="uchip">${S.cu.nome}<br>${PL[S.cu.perfil]} · <button onclick="logout()">sair</button></div>`:''}
   </header><main><div class="screen">`;
   if(S.error)h+=`<div class="err">${S.error}</div>`;
-  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill,bo_checklist:rBOChecklist};
+  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill,bo_checklist:rBOChecklist,sv_bos:rSvBOs};
   h+=(rs[S.screen]||rLogin)();
   h+=`</div></main>`;app.innerHTML=h;
 }
@@ -683,7 +683,7 @@ function rSv(){
 }
 function rSvCL(){
   const nPend=S.mpend.length;
-  const alertBO=nPend>0?`<div style="background:#FBE7E4;border:1.5px solid var(--nok);border-radius:12px;padding:12px 15px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="SS({svTab:'checklists',clFilter:'todos',fPerfil:'mecanico'});ldCL('todos')"><div><div style="font-weight:700;color:var(--nok);font-size:15px;">🔧 ${nPend} BO${nPend>1?'s':''} aguardando mecânico</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">Problemas encaminhados ainda não resolvidos</div></div><span style="font-size:20px;">›</span></div>`:'';
+  const alertBO=nPend>0?`<div style="background:#FBE7E4;border:1.5px solid var(--nok);border-radius:12px;padding:12px 15px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="SS({screen:'sv_bos'})"><div><div style="font-weight:700;color:var(--nok);font-size:15px;">🔧 ${nPend} BO${nPend>1?'s':''} aguardando mecânico</div><div style="font-size:12px;color:var(--muted);margin-top:2px;">Problemas encaminhados ainda não resolvidos</div></div><span style="font-size:20px;">›</span></div>`:'';
   const fs=`<div class="frow"><button class="fbtn ${S.clFilter==='pendente'?'on':''}" onclick="setCLF('pendente')">Pendentes</button><button class="fbtn ${S.clFilter==='aprovado'?'on':''}" onclick="setCLF('aprovado')">Aprovados</button><button class="fbtn ${S.clFilter==='todos'?'on':''}" onclick="setCLF('todos')">Todos</button></div>`;
   const filt=`<div class="fc" style="padding:12px;margin-bottom:12px;">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
@@ -909,11 +909,36 @@ async function ldDrill(itemKey){
   SS({drillCL:cls});
 }
 
+
+function rSvBOs(){
+  const bos=S.mpend;
+  if(!bos.length){
+    setTimeout(async()=>{await ldMP();render();},0);
+    return`<h1 class="t">BOs aguardando mecânico</h1><div class="ldg">Carregando...</div><button class="bs" onclick="SS({screen:'sv'})">Voltar</button>`;
+  }
+  const cards=bos.map(m=>{
+    const boNum=m.checklist_origem_bo?`BO#${m.checklist_origem_bo}`:'';
+    return`<div class="lc">
+      <div class="ltop">
+        <span>${boNum?`<span style="font-family:var(--mono);font-weight:700;color:var(--blue);">${boNum}</span> · `:''} ${fmtD(m.criado_em)}</span>
+        <span style="font-size:11px;font-weight:700;color:var(--nok);">PENDENTE</span>
+      </div>
+      <div class="lp">${m.veiculo_placa}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px;">Reportado por ${m.origem_usuario_nome}</div>
+      ${m.itens.map(i=>`<div style="font-size:13px;color:var(--nok);margin-top:3px;">⚠ ${i.item}${i.motivo?': '+i.motivo:''}</div>`).join('')}
+    </div>`;
+  }).join('');
+  return`
+    <h1 class="t">BOs aguardando mecânico</h1>
+    <p class="s">${bos.length} BO(s) encaminhado(s) ainda não resolvido(s).</p>
+    ${cards}
+    <button class="bs" onclick="SS({screen:'sv'})">Voltar</button>`;
+}
 async function initApp(){
   let sv=null;try{sv=JSON.parse(localStorage.getItem('cop_s')||'null');}catch(e){}
   if(!sv||!sv.id){render();return;}
   S.cu=sv;
-  if(sv.perfil==='supervisor'){S.screen='sv';render();await ldCL(S.clFilter);}
+  if(sv.perfil==='supervisor'){S.screen='sv';render();await Promise.all([ldCL(S.clFilter),ldMP()]);}
   else if(sv.perfil==='inspetor'){
     S.screen='insp';S.avScreen='inicio';render();
     const[m,v,r]=await Promise.all([sb.from('usuarios').select('id,nome').eq('perfil','motorista').eq('ativo',true).order('nome'),sb.from('veiculos').select('placa').eq('ativo',true).order('placa'),sb.from('rotas').select('nome').eq('ativo',true).order('nome')]);
