@@ -475,6 +475,7 @@ async function ldReport(p){
   const{data}=await q;const cls=data||[];
   const pp={motorista:0,mecanico:0,lavador:0};const ps={pendente:0,aprovado:0};
   const pv={};const ppe={};const pg={};const prob={};let tip=0;
+  const probVeicSeen=new Set(); // evita contar mesmo problema no mesmo veículo mais de uma vez
   const agm=(pr==='tudo')||(pr==='custom'&&start&&end&&(end.getTime()-start.getTime())/(86400000)>45);
   cls.forEach(c=>{
     pp[c.perfil]=(pp[c.perfil]||0)+1;ps[c.status]=(ps[c.status]||0)+1;
@@ -482,7 +483,17 @@ async function ldReport(p){
     const ch=agm?(c.criado_em||'').slice(0,7):(c.criado_em||'').slice(0,10);
     pg[ch]=(pg[ch]||0)+1;
     if(!pv[c.veiculo_placa])pv[c.veiculo_placa]={t:0,p:0};pv[c.veiculo_placa].t++;
-    (c.itens||[]).forEach(i=>{if(i.status==='nok'||i.status==='nao'){pv[c.veiculo_placa].p++;tip++;const k=`${i.secao} — ${i.item}`;prob[k]=(prob[k]||0)+1;}});
+    // Contar problemas por veículo único — mesmo problema no mesmo veículo conta só 1 vez
+    if(c.tipo_manutencao!=='corretivo'){
+      const novosProbs=new Set();
+      (c.itens||[]).forEach(i=>{
+        if(i.status==='nok'||i.status==='nao'){
+          const k=`${i.secao} — ${i.item}`;
+          const kVeic=`${c.veiculo_placa}||${k}`;
+          if(!probVeicSeen.has(kVeic)){probVeicSeen.add(kVeic);pv[c.veiculo_placa].p++;tip++;prob[k]=(prob[k]||0)+1;}
+        }
+      });
+    }
   });
   const go=Object.keys(pg).sort().slice(-14);
   const tv=Object.entries(pv).sort((a,b)=>b[1].p-a[1].p).slice(0,8);
