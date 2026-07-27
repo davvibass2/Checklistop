@@ -885,7 +885,7 @@ function rSvAv(){
               <div style="display:flex;gap:7px;"><button class="bp" style="background:var(--nok);" onclick="confirmDelAv()">Sim, excluir</button><button class="bs" style="margin-top:0;" onclick="SS({avConfirmDel:null})">Cancelar</button></div>
             </div>`
           :`<div style="display:flex;gap:7px;margin-top:7px;">
-              <button class="ib" onclick="editAvSv(S.avHist.find(x=>x.id==='${a.id}'))">✏️ Editar</button>
+              <button class="ib" onclick="editAvSv('${a.id}')">✏️ Editar</button>
               <button class="ib d" onclick="delAv('${a.id}')">Excluir</button>
             </div>`}
       </div>`;
