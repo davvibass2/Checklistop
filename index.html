@@ -188,7 +188,9 @@ let S={
   mpend:[],resolvMid:null,resolvMitens:null,
   editCL:null,
   avMid:null,avResp:{p:{},v:{}},avObs:'',avVeic:'',avRota:'',
-  avHist:[],avScreen:'inicio',
+  avCodigo:'',avData:'',avHoraIni:'',avHoraFim:'',
+  avKmIni:'',avKmFim:'',avLitros:'',
+  avHist:[],avScreen:'inicio',avEditId:null,avConfirmDel:null,
   drillItem:null,drillCL:[],
   andamentoId:null,
   boAtual:null,
@@ -276,7 +278,8 @@ function logout(){
   SS({screen:'login',cu:null,selU:null,selV:null,taco:'',km:'',tipoRota:'saida',motRel:'',motivo:'',
     abast:null,itens:[],obsG:'',fotos:[],fp:[],error:null,history:[],usuarios:[],allCL:[],
     selDetail:null,eqForm:null,veicForm:null,rotaForm:null,rotas:[],rq:'',selRota:null,lq:'',svid:'',
-    mpend:[],resolvMid:null,resolvMitens:null,editCL:null,avHist:[],avScreen:'inicio'});
+    mpend:[],resolvMid:null,resolvMitens:null,editCL:null,avHist:[],avScreen:'inicio',
+  avEditId:null,avConfirmDel:null,avCodigo:'',avData:'',avHoraIni:'',avHoraFim:'',avKmIni:'',avKmFim:'',avLitros:''});
 }
 
 function startCL(){
@@ -317,7 +320,7 @@ async function submitCL(){
       perfil:tp,tacografo:S.taco||null,km:S.km?Number(S.km):null,
       motorista_relacionado:S.motRel||null,itens:ip,
       observacoes_gerais:S.obsG||null,fotos:fu,
-      status:(tp==='motorista'&&temNOK)?'aprovado':'pendente',
+      status:'pendente',
       encaminhado_mecanico:(tp==='motorista'&&temNOK),
       encaminhado_em:(tp==='motorista'&&temNOK)?new Date().toISOString():null
     };
@@ -517,15 +520,39 @@ async function submitAv(){
   const np=calcP(S.avResp.p);const nv=calcV(S.avResp.v);const nf=nFinal(np,nv);
   const cls=nf!==null?clsNota(nf).l:null;
   SS({submitting:true,error:null});
-  const{error}=await sb.from('avaliacoes').insert({
+  const kmIni=S.avKmIni?Number(S.avKmIni):null;
+  const kmFim=S.avKmFim?Number(S.avKmFim):null;
+  const kmTotal=(kmIni!==null&&kmFim!==null&&kmFim>=kmIni)?kmFim-kmIni:null;
+  const litros=S.avLitros?Number(S.avLitros):null;
+  const consumo=(kmTotal&&litros&&litros>0)?kmTotal/litros:null;
+  let duracao=null;
+  if(S.avHoraIni&&S.avHoraFim){
+    const [h1,m1]=S.avHoraIni.split(':').map(Number);
+    const [h2,m2]=S.avHoraFim.split(':').map(Number);
+    const mins=(h2*60+m2)-(h1*60+m1);
+    if(mins>0)duracao=`${Math.floor(mins/60)}h${String(mins%60).padStart(2,'0')}min`;
+  }
+  const payload={
     motorista_id:S.avMid,motorista_nome:mu?mu.nome:'—',
     inspetor_id:S.cu.id,inspetor_nome:S.cu.nome,
     veiculo_placa:S.avVeic||null,rota:S.avRota||null,
+    codigo:S.avCodigo||null,data_avaliacao:S.avData||null,
+    hora_inicio:S.avHoraIni||null,hora_fim:S.avHoraFim||null,duracao,
+    km_inicial:kmIni,km_final:kmFim,km_total:kmTotal,
+    litros_abastecidos:litros,consumo_km_l:consumo?parseFloat(consumo.toFixed(2)):null,
     padrao:S.avResp.p,vicios:S.avResp.v,
     nota_padrao:np,nota_vicios:nv,nota_final:nf,classificacao:cls,observacoes:S.avObs||null
-  });
+  };
+  let error;
+  if(S.avEditId){
+    ({error}=await sb.from('avaliacoes').update(payload).eq('id',S.avEditId));
+  } else {
+    ({error}=await sb.from('avaliacoes').insert(payload));
+  }
   if(error){SS({submitting:false,error:'Erro: '+error.message});return;}
-  SS({submitting:false,avScreen:'ok',avResp:{p:{},v:{}},avMid:null,avVeic:'',avRota:'',avObs:'',error:null});
+  SS({submitting:false,avScreen:'ok',avResp:{p:{},v:{}},avMid:null,avVeic:'',avRota:'',
+    avObs:'',avCodigo:'',avData:'',avHoraIni:'',avHoraFim:'',avKmIni:'',avKmFim:'',avLitros:'',
+    avEditId:null,error:null});
   await ldAH();
 }
 function iniciarAv(){if(!S.avMid){SS({error:'Selecione um motorista.'});return;}SS({avScreen:'form',avResp:{p:{},v:{}},error:null});}
@@ -839,13 +866,60 @@ function rSvAv(){
   return`<h1 class="t">Avaliações de motoristas</h1>
     <div class="erow" style="margin-bottom:14px;"><button class="ba" onclick="expAvXL()">⬇ Baixar Excel</button><button class="ba" onclick="expAvPPTX()">⬇ Baixar PowerPoint</button></div>
     <div class="cc"><h3>Ranking</h3><table class="ts"><thead><tr><th>#</th><th>Motorista</th><th>Média</th><th>Classe</th><th>Aval.</th></tr></thead><tbody>${rk.map((r,i)=>{const cl=clsNota(r.med);return`<tr><td style="font-weight:700;color:var(--muted);">${i+1}</td><td>${r.nome}</td><td style="font-weight:700;color:${cl.c}">${r.med.toFixed(1)}</td><td style="font-weight:700;color:${cl.c}">${cl.l}</td><td>${r.q}</td></tr>`;}).join('')}</tbody></table></div>
-    <div class="cc"><h3>Recentes</h3>${h.slice(0,15).map(a=>{const cl=a.nota_final!==null?clsNota(a.nota_final):null;return`<div class="drow" style="flex-direction:column;align-items:flex-start;gap:2px;"><div style="display:flex;justify-content:space-between;width:100%;"><span style="font-weight:600;">${a.motorista_nome}</span>${cl?`<span style="font-weight:700;color:${cl.c}">${a.nota_final.toFixed(1)} — ${cl.l}</span>`:''}</div><div style="font-size:12px;color:var(--muted);">${fmtD(a.criado_em)} · ${a.inspetor_nome}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div></div>`;}).join('')}</div>`;
+    <div class="cc"><h3>Avaliações recentes</h3>${h.slice(0,20).map(a=>{
+      const cl=a.nota_final!==null?clsNota(a.nota_final):null;
+      const isDelConf=S.avConfirmDel===a.id;
+      return`<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;">${a.motorista_nome}</div>
+            <div style="font-size:12px;color:var(--muted);">${fmtD(a.criado_em)} · ${a.inspetor_nome}${a.codigo?' · '+a.codigo:''}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div>
+            ${a.km_total?`<div style="font-size:12px;color:var(--muted);">🛣 ${a.km_total} km${a.consumo_km_l?' · '+a.consumo_km_l+' km/L':''}</div>`:''}
+            ${a.duracao?`<div style="font-size:12px;color:var(--muted);">⏱ ${a.duracao}</div>`:''}
+          </div>
+          ${cl?`<div style="text-align:right;margin-left:10px;"><div style="font-weight:700;color:${cl.c};font-size:16px;">${a.nota_final.toFixed(1)}</div><div style="font-size:11px;font-weight:700;color:${cl.c};">${cl.l}</div></div>`:''}
+        </div>
+        ${isDelConf
+          ?`<div style="background:#FBE7E4;border-radius:8px;padding:10px;margin-top:7px;">
+              <div style="font-size:13px;font-weight:600;color:var(--nok);margin-bottom:7px;">Excluir esta avaliação?</div>
+              <div style="display:flex;gap:7px;"><button class="bp" style="background:var(--nok);" onclick="confirmDelAv()">Sim, excluir</button><button class="bs" style="margin-top:0;" onclick="SS({avConfirmDel:null})">Cancelar</button></div>
+            </div>`
+          :`<div style="display:flex;gap:7px;margin-top:7px;">
+              <button class="ib" onclick="editAvSv(S.avHist.find(x=>x.id==='${a.id}'))">✏️ Editar</button>
+              <button class="ib d" onclick="delAv('${a.id}')">Excluir</button>
+            </div>`}
+      </div>`;
+    }).join('')}</div>`;
 }
 function rInsp(){
   if(S.avScreen==='ok')return`<div class="sw"><div class="stamp" style="border-color:var(--ok);color:var(--ok);">ENVIADA</div><div class="sd">Avaliação salva.</div><button class="bp" onclick="SS({avScreen:'inicio'})">Nova avaliação</button><button class="bs" onclick="SS({avScreen:'historico'})">Ver histórico</button></div>`;
   const ts=`<div class="atabs"><button class="atab ${S.avScreen==='inicio'||S.avScreen==='form'?'on':''}" onclick="SS({avScreen:'inicio'})">📝 Avaliar</button><button class="atab ${S.avScreen==='historico'?'on':''}" onclick="SS({avScreen:'historico'})">📋 Histórico</button></div>`;
   if(S.avScreen==='historico'){
-    const its=!S.avHist.length?'<div class="emp">Nenhuma avaliação ainda.</div>':S.avHist.map(a=>{const cl=a.nota_final!==null?clsNota(a.nota_final):null;return`<div class="hc"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;"><div><div style="font-weight:700;font-size:15px;">${a.motorista_nome}</div><div style="font-size:12px;color:var(--muted);">${fmtD(a.criado_em)}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div></div>${a.nota_final!==null?`<div><div class="hn" style="color:${cl.c}">${a.nota_final.toFixed(1)}</div><div style="font-size:11px;font-weight:700;color:${cl.c};text-align:center;">${cl.l}</div></div>`:''}</div><div style="font-size:13px;color:var(--muted);">Padrão: ${a.nota_padrao!==null?a.nota_padrao.toFixed(1):'—'} · Vícios: ${a.nota_vicios!==null?a.nota_vicios.toFixed(1):'—'}</div>${a.observacoes?`<div style="font-size:13px;margin-top:7px;">${a.observacoes}</div>`:''}</div>`;}).join('');
+    const its=!S.avHist.length?'<div class="emp">Nenhuma avaliação ainda.</div>':S.avHist.map(a=>{
+      const cl=a.nota_final!==null?clsNota(a.nota_final):null;
+      const isDelConf=S.avConfirmDel===a.id;
+      return`<div class="hc">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px;">
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:15px;">${a.motorista_nome}</div>
+            <div style="font-size:12px;color:var(--muted);">${fmtD(a.criado_em)}${a.codigo?' · '+a.codigo:''}${a.veiculo_placa?' · '+a.veiculo_placa:''}${a.rota?' · '+a.rota:''}</div>
+            ${a.km_total?`<div style="font-size:12px;color:var(--muted);">🛣 ${a.km_total} km${a.consumo_km_l?' · '+a.consumo_km_l+' km/L':''}</div>`:''}
+            ${a.duracao?`<div style="font-size:12px;color:var(--muted);">⏱ ${a.duracao}</div>`:''}
+          </div>
+          ${a.nota_final!==null?`<div style="text-align:center;margin-left:10px;"><div class="hn" style="color:${cl.c}">${a.nota_final.toFixed(1)}</div><div style="font-size:11px;font-weight:700;color:${cl.c};">${cl.l}</div></div>`:''}
+        </div>
+        <div style="font-size:13px;color:var(--muted);">Padrão: ${a.nota_padrao!==null?a.nota_padrao.toFixed(1):'—'} · Vícios: ${a.nota_vicios!==null?a.nota_vicios.toFixed(1):'—'}</div>
+        ${a.observacoes?`<div style="font-size:13px;margin-top:6px;">${a.observacoes}</div>`:''}
+        ${isDelConf?`<div style="background:#FBE7E4;border-radius:8px;padding:10px;margin-top:8px;">
+            <div style="font-size:13px;font-weight:600;color:var(--nok);margin-bottom:8px;">Excluir esta avaliação?</div>
+            <div style="display:flex;gap:7px;"><button class="bp" style="background:var(--nok);" onclick="confirmDelAv()">Sim, excluir</button><button class="bs" style="margin-top:0;" onclick="SS({avConfirmDel:null})">Cancelar</button></div>
+          </div>`
+          :`<div style="display:flex;gap:7px;margin-top:9px;">
+            <button class="ib" onclick='editAv(${JSON.stringify(a).replace(/'/g,"&#39;")})'>✏️ Editar</button>
+            <button class="ib d" onclick="delAv('${a.id}')">Excluir</button>
+          </div>`}
+      </div>`;
+    }).join('');
     return ts+`<h1 class="t">Histórico</h1>`+its;
   }
   if(S.avScreen==='form'){
@@ -857,15 +931,39 @@ function rInsp(){
     const vr=VICI.map((it,i)=>{const v=rp.v[it.id];return`<div class="ai"><div class="ait">${i+1}. ${it.t}</div><div class="abs"><button class="ab ${v==='33.3'?'sl':''}" onclick="setAR('v','${it.id}','33.3')">Baixo</button><button class="ab ${v==='66.6'?'sm':''}" onclick="setAR('v','${it.id}','66.6')">Médio</button><button class="ab ${v==='99.9'?'sh':''}" onclick="setAR('v','${it.id}','99.9')">Alto</button></div></div>`;}).join('');
     return`<h1 class="t">${mu?mu.nome.split(' ')[0]:'—'}</h1><p class="s">Avaliação de condução</p>${sc}<div class="fc"><label class="fl">Observações (opcional)</label><textarea placeholder="Pontos de atenção, elogios..." oninput="S.avObs=this.value">${S.avObs}</textarea></div><div class="sb"><div class="sh"><span class="sn">01</span><span class="sname">Padrão de Condução</span></div><div class="fc">${pr}</div></div><div class="sb"><div class="sh"><span class="sn">02</span><span class="sname">Vícios — Intensidade</span></div><div class="fc">${vr}</div></div><div class="sfooter"><div class="ppill">${tr} de ${ti} itens · <span onclick="SS({avScreen:'inicio'})" style="cursor:pointer;text-decoration:underline;">trocar motorista</span></div><button class="bp" ${S.submitting?'disabled':''} onclick="submitAv()">${S.submitting?'Salvando...':'Enviar avaliação'}</button></div>`;
   }
-  const mo=S.usuarios.map(m=>`<option value="${m.id}">${m.nome}</option>`).join('');
-  const vo=(S.veiculos||[]).map(v=>`<option value="${v.placa}">${v.placa}</option>`).join('');
-  const ro=(S.rotas||[]).map(r=>`<option value="${r.nome}">${r.nome}</option>`).join('');
-  return ts+`<h1 class="t">Nova avaliação</h1>
-    <label class="fl">Motorista</label><select onchange="SS({avMid:this.value})"><option value="">Selecione...</option>${mo}</select>
-    <label class="fl">Veículo (opcional)</label><select onchange="S.avVeic=this.value"><option value="">—</option>${vo}</select>
-    <label class="fl">Rota (opcional)</label><select onchange="S.avRota=this.value"><option value="">—</option>${ro}</select>
-    <button class="bp" onclick="iniciarAv()">Iniciar avaliação</button>
-    <button class="bs" onclick="SS({avScreen:'historico'})">Ver histórico</button>`;
+  const mo=S.usuarios.map(m=>`<option value="${m.id}" ${m.id===S.avMid?'selected':''}>${m.nome}</option>`).join('');
+  const vo=(S.veiculos||[]).map(v=>`<option value="${v.placa}" ${v.placa===S.avVeic?'selected':''}>${v.placa}</option>`).join('');
+  const ro=(S.rotas||[]).map(r=>`<option value="${r.nome}" ${r.nome===S.avRota?'selected':''}>${r.nome}</option>`).join('');
+  return ts+`<h1 class="t">${S.avEditId?'Editar avaliação':'Nova avaliação'}</h1>
+    <label class="fl">Motorista</label>
+    <select onchange="SS({avMid:this.value})"><option value="">Selecione...</option>${mo}</select>
+    <label class="fl">Veículo (opcional)</label>
+    <select onchange="S.avVeic=this.value"><option value="">—</option>${vo}</select>
+    <label class="fl">Rota (opcional)</label>
+    <select onchange="S.avRota=this.value"><option value="">—</option>${ro}</select>
+    <label class="fl">Código da avaliação (opcional)</label>
+    <input type="text" placeholder="ex.: 001/2026" value="${S.avCodigo}" oninput="S.avCodigo=this.value">
+    <label class="fl">Data</label>
+    <input type="date" value="${S.avData}" onchange="S.avData=this.value">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div><label class="fl">Hora início</label><input type="time" value="${S.avHoraIni}" onchange="S.avHoraIni=this.value;calcDuracao()" style="margin-bottom:0;"></div>
+      <div><label class="fl">Hora fim</label><input type="time" value="${S.avHoraFim}" onchange="S.avHoraFim=this.value;calcDuracao()" style="margin-bottom:0;"></div>
+    </div>
+    <div id="duracao-display" style="font-size:13px;color:var(--muted);margin:6px 0 14px;font-family:var(--mono);"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      <div><label class="fl">KM inicial</label><input type="number" placeholder="0" value="${S.avKmIni}" oninput="S.avKmIni=this.value;calcKM()" style="margin-bottom:0;"></div>
+      <div><label class="fl">KM final</label><input type="number" placeholder="0" value="${S.avKmFim}" oninput="S.avKmFim=this.value;calcKM()" style="margin-bottom:0;"></div>
+    </div>
+    <div id="km-display" style="font-size:13px;color:var(--muted);margin:6px 0 8px;font-family:var(--mono);"></div>
+    <label class="fl">Litros abastecidos (opcional)</label>
+    <input type="number" step="0.1" placeholder="0.0" value="${S.avLitros}" oninput="S.avLitros=this.value;calcKM()">
+    <button class="bp" onclick="iniciarAv()">${S.avEditId?'Salvar e ir para avaliação':'Iniciar avaliação'}</button>
+    ${S.avEditId?`<button class="bs" onclick="SS({avEditId:null,avScreen:'historico',error:null})">Cancelar edição</button>`:''}
+    <button class="bs" onclick="SS({avScreen:'historico'})">Ver histórico</button>
+    <label class="bs" style="text-align:center;cursor:pointer;margin-top:9px;display:block;">
+      📥 Importar do app antigo (.json)
+      <input type="file" accept=".json" style="display:none" onchange="importarJSON(this.files[0])">
+    </label>`;
 }
 
 function expXL(){
@@ -945,6 +1043,26 @@ function rSvBOs(){
     ${cards}
     <button class="bs" onclick="SS({screen:'sv'})">Voltar</button>`;
 }
+
+function calcDuracao(){
+  const ini=S.avHoraIni,fim=S.avHoraFim;
+  const el=document.getElementById('duracao-display');if(!el)return;
+  if(!ini||!fim){el.textContent='';return;}
+  const[h1,m1]=ini.split(':').map(Number);
+  const[h2,m2]=fim.split(':').map(Number);
+  const mins=(h2*60+m2)-(h1*60+m1);
+  el.textContent=mins>0?`Duração: ${Math.floor(mins/60)}h${String(mins%60).padStart(2,'0')}min`:'';
+}
+function calcKM(){
+  const ini=S.avKmIni?Number(S.avKmIni):null;
+  const fim=S.avKmFim?Number(S.avKmFim):null;
+  const lit=S.avLitros?Number(S.avLitros):null;
+  const el=document.getElementById('km-display');if(!el)return;
+  const total=(ini!==null&&fim!==null&&fim>=ini)?fim-ini:null;
+  const cons=(total&&lit&&lit>0)?(total/lit).toFixed(2):null;
+  el.textContent=total!==null?`KM rodado: ${total} km${cons?' · Consumo: '+cons+' km/L':''}`:ini!==null&&fim!==null?'⚠ KM final menor que inicial':'';
+}
+
 async function initApp(){
   let sv=null;try{sv=JSON.parse(localStorage.getItem('cop_s')||'null');}catch(e){}
   if(!sv||!sv.id){render();return;}
