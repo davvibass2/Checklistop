@@ -279,7 +279,7 @@ function logout(){
     abast:null,itens:[],obsG:'',fotos:[],fp:[],error:null,history:[],usuarios:[],allCL:[],
     selDetail:null,eqForm:null,veicForm:null,rotaForm:null,rotas:[],rq:'',selRota:null,lq:'',svid:'',
     mpend:[],resolvMid:null,resolvMitens:null,editCL:null,avHist:[],avScreen:'inicio',
-  avEditId:null,avConfirmDel:null,avCodigo:'',avData:'',avHoraIni:'',avHoraFim:'',avKmIni:'',avKmFim:'',avLitros:''});
+  avEditId:null,avConfirmDel:null,avDetAtual:null,avCodigo:'',avData:'',avHoraIni:'',avHoraFim:'',avKmIni:'',avKmFim:'',avLitros:''});
 }
 
 function startCL(){
@@ -555,7 +555,7 @@ async function submitAv(){
     avEditId:null,error:null});
   await ldAH();
 }
-function iniciarAv(){if(!S.avMid){SS({error:'Selecione um motorista.'});return;}SS({avScreen:'form',avResp:{p:{},v:{}},error:null});}
+function iniciarAv(){if(!S.avMid){SS({error:'Selecione um motorista.'});return;}SS({avScreen:'form',avResp:S.avEditId?S.avResp:{p:{},v:{}},error:null});}
 function setAR(t,id,val){const r={p:{...S.avResp.p},v:{...S.avResp.v}};r[t][id]=val;SS({avResp:r});}
 
 async function openEdit(){
@@ -593,7 +593,7 @@ function render(){
     ${S.cu?`<div class="uchip">${S.cu.nome}<br>${PL[S.cu.perfil]} · <button onclick="logout()">sair</button></div>`:''}
   </header><main><div class="screen">`;
   if(S.error)h+=`<div class="err">${S.error}</div>`;
-  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill,bo_checklist:rBOChecklist,sv_bos:rSvBOs};
+  const rs={login:rLogin,pin:rPin,setup:rSetup,cl:rCL,ok:rOk,hist:rHist,sv:rSv,det:rDet,mpend:rMP,insp:rInsp,drill:rDrill,bo_checklist:rBOChecklist,sv_bos:rSvBOs,av_det:rAvDet};
   h+=(rs[S.screen]||rLogin)();
   h+=`</div></main>`;app.innerHTML=h;
 }
@@ -644,7 +644,7 @@ function rSetup(){
     ${ex}${rb}
     <button class="bp" onclick="startCL()">Iniciar checklist</button>
     <button class="bs" onclick="showHist()">Ver meu histórico</button>
-    <button class="bs" onclick="logout()" style="margin-top:6px;border-color:var(--muted);color:var(--muted);">← Sair</button>`;
+    <button class="bs" style="margin-top:6px;border-color:var(--muted);color:var(--muted);" onclick="logout()">← Sair</button>`; 
 }
 function rCL(){
   const tp=S.cu.perfil;const tpl=TMPL[tp];
@@ -885,6 +885,7 @@ function rSvAv(){
               <div style="display:flex;gap:7px;"><button class="bp" style="background:var(--nok);" onclick="confirmDelAv()">Sim, excluir</button><button class="bs" style="margin-top:0;" onclick="SS({avConfirmDel:null})">Cancelar</button></div>
             </div>`
           :`<div style="display:flex;gap:7px;margin-top:7px;">
+              <button class="ib" onclick="abrirAvDet('${a.id}')">👁 Ver</button>
               <button class="ib" onclick="editAvSv('${a.id}')">✏️ Editar</button>
               <button class="ib d" onclick="delAv('${a.id}')">Excluir</button>
             </div>`}
@@ -958,7 +959,8 @@ function rInsp(){
     <label class="fl">Litros abastecidos (opcional)</label>
     <input type="number" step="0.1" placeholder="0.0" value="${S.avLitros}" oninput="S.avLitros=this.value;calcKM()">
     <button class="bp" onclick="iniciarAv()">${S.avEditId?'Salvar e ir para avaliação':'Iniciar avaliação'}</button>
-    ${S.avEditId?`<button class="bs" onclick="SS({avEditId:null,avScreen:'historico',error:null})">Cancelar edição</button>`:''}
+    ${S.avEditId?`<button class="bs" onclick="SS({avEditId:null,avMid:null,avScreen:'historico',avResp:{p:{},v:{}},error:null})">Cancelar edição</button>`:''}
+    <button class="bs" style="margin-top:6px;border-color:var(--muted);color:var(--muted);" onclick="S.cu.perfil==='supervisor'?SS({screen:'sv',svTab:'avaliacoes'}):SS({avScreen:'historico'})">← Voltar</button>
     <button class="bs" onclick="SS({avScreen:'historico'})">Ver histórico</button>
     <label class="bs" style="text-align:center;cursor:pointer;margin-top:9px;display:block;">
       📥 Importar do app antigo (.json)
@@ -1061,6 +1063,62 @@ function calcKM(){
   const total=(ini!==null&&fim!==null&&fim>=ini)?fim-ini:null;
   const cons=(total&&lit&&lit>0)?(total/lit).toFixed(2):null;
   el.textContent=total!==null?`KM rodado: ${total} km${cons?' · Consumo: '+cons+' km/L':''}`:ini!==null&&fim!==null?'⚠ KM final menor que inicial':'';
+}
+
+
+function abrirAvDet(avId){
+  const av=S.avHist.find(x=>x.id===avId);
+  if(!av){SS({error:'Avaliação não encontrada.'});return;}
+  SS({avDetAtual:av,screen:'av_det'});
+}
+
+function rAvDet(){
+  const a=S.avDetAtual;
+  if(!a)return`<div class="emp">Não encontrado.</div>`;
+  const cl=a.nota_final!==null?clsNota(a.nota_final):null;
+  const voltarFn=S.cu.perfil==='supervisor'?"SS({screen:'sv',svTab:'avaliacoes'})":`SS({screen:'insp',avScreen:'historico'})`;
+
+  const padraoRows=PADI.map((it,i)=>{
+    const v=a.padrao&&a.padrao[it.id];
+    const label=v==='A'?{t:'A',c:'#1e8e3e'}:v==='B'?{t:'B',c:'var(--amber)'}:v==='33.3'?{t:'C',c:'var(--nok)'}:null;
+    return`<div class="drow"><span>${i+1}. ${it.t}</span>${label?`<span style="font-weight:700;color:${label.c};">${label.t}</span>`:'<span style="color:var(--muted);">—</span>'}</div>`;
+  }).join('');
+
+  const viciosRows=VICI.map((it,i)=>{
+    const v=a.vicios&&a.vicios[it.id];
+    const label=v==='33.3'?{t:'Baixo',c:'#1e8e3e'}:v==='66.6'?{t:'Médio',c:'var(--amber)'}:v==='99.9'?{t:'Alto',c:'var(--nok)'}:null;
+    return`<div class="drow"><span>${i+1}. ${it.t}</span>${label?`<span style="font-weight:700;color:${label.c};">${label.t}</span>`:'<span style="color:var(--muted);">—</span>'}</div>`;
+  }).join('');
+
+  return`
+    <div id="pr">
+      ${cl?`<div class="scbox" style="margin-bottom:16px;">
+        <div class="scv">${a.nota_final.toFixed(1)}</div>
+        <div class="scl">${a.motorista_nome}</div>
+        <div class="scc" style="background:${cl.c}">${cl.l}</div>
+        <div class="msc">
+          <div><div class="mv">${a.nota_padrao!==null?a.nota_padrao.toFixed(1):'—'}</div><div class="ml">Padrão</div></div>
+          <div><div class="mv">${a.nota_vicios!==null?a.nota_vicios.toFixed(1):'—'}</div><div class="ml">Vícios</div></div>
+        </div>
+      </div>`:''}
+      <div class="mg">
+        <div class="mc"><div class="k">Data</div><div class="v">${a.data_avaliacao||fmtD(a.criado_em)}</div></div>
+        <div class="mc"><div class="k">Inspetor</div><div class="v">${a.inspetor_nome}</div></div>
+        ${a.veiculo_placa?`<div class="mc"><div class="k">Veículo</div><div class="v">${a.veiculo_placa}</div></div>`:''}
+        ${a.rota?`<div class="mc"><div class="k">Rota</div><div class="v">${a.rota}</div></div>`:''}
+        ${a.codigo?`<div class="mc"><div class="k">Código</div><div class="v">${a.codigo}</div></div>`:''}
+        ${a.duracao?`<div class="mc"><div class="k">Duração</div><div class="v">${a.duracao}</div></div>`:''}
+        ${a.km_total?`<div class="mc"><div class="k">KM rodado</div><div class="v">${a.km_total} km</div></div>`:''}
+        ${a.consumo_km_l?`<div class="mc"><div class="k">Consumo</div><div class="v">${a.consumo_km_l} km/L</div></div>`:''}
+      </div>
+      ${a.observacoes?`<div class="fc" style="margin-bottom:14px;font-size:14px;">${a.observacoes}</div>`:''}
+      <div class="sb"><div class="sh"><span class="sn">01</span><span class="sname">Padrão de Condução</span></div>${padraoRows}</div>
+      <div class="sb"><div class="sh"><span class="sn">02</span><span class="sname">Vícios — Intensidade</span></div>${viciosRows}</div>
+    </div>
+    <button class="bs no-print" onclick="${voltarFn}">← Voltar</button>
+    <button class="bs no-print" onclick="window.print()">🖨 Imprimir</button>
+    <button class="bs no-print" onclick="editAvSv('${a.id}')">✏️ Editar</button>
+  `;
 }
 
 async function initApp(){
