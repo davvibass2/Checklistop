@@ -1473,45 +1473,51 @@ async function lerCache(chave){
 
 // Wrapper de ldV() com lógica online/offline e fallback para cache.
 async function ldVComCache(){
+  let dadosValidos=false;
   if(navigator.onLine){
     try{
       await ldV();
-      if(S.veiculos&&S.veiculos.length)await gravarCache('veiculos',S.veiculos);
-      return;
+      if(Array.isArray(S.veiculos)){await gravarCache('veiculos',S.veiculos);dadosValidos=true;}
     }catch(_){}
   }
-  const reg=await lerCache('veiculos');
-  if(reg&&reg.dados&&reg.dados.length){SS({veiculos:reg.dados});}
-  else{SS({error:'Nenhum dado offline disponível.'});}
+  if(!dadosValidos){
+    const reg=await lerCache('veiculos');
+    if(reg&&Array.isArray(reg.dados)){SS({veiculos:reg.dados});}
+    else{SS({error:'Nenhum dado offline disponível.'});}
+  }
 }
 
 // Wrapper de ldR() com lógica online/offline e fallback para cache.
 async function ldRComCache(){
+  let dadosValidos=false;
   if(navigator.onLine){
     try{
       await ldR();
-      if(S.rotas&&S.rotas.length)await gravarCache('rotas',S.rotas);
-      return;
+      if(Array.isArray(S.rotas)){await gravarCache('rotas',S.rotas);dadosValidos=true;}
     }catch(_){}
   }
-  const reg=await lerCache('rotas');
-  if(reg&&reg.dados&&reg.dados.length){SS({rotas:reg.dados});}
-  else{SS({error:'Nenhum dado offline disponível.'});}
+  if(!dadosValidos){
+    const reg=await lerCache('rotas');
+    if(reg&&Array.isArray(reg.dados)){SS({rotas:reg.dados});}
+    else{SS({error:'Nenhum dado offline disponível.'});}
+  }
 }
 
 // Wrapper de ldU() com lógica online/offline e fallback para cache.
 // OBS-28: formato dos dados preservado sem alterações.
 async function ldUComCache(){
+  let dadosValidos=false;
   if(navigator.onLine){
     try{
       await ldU();
-      if(S.usuarios&&S.usuarios.length)await gravarCache('usuarios',S.usuarios);
-      return;
+      if(Array.isArray(S.usuarios)){await gravarCache('usuarios',S.usuarios);dadosValidos=true;}
     }catch(_){}
   }
-  const reg=await lerCache('usuarios');
-  if(reg&&reg.dados&&reg.dados.length){SS({usuarios:reg.dados});}
-  else{SS({error:'Nenhum dado offline disponível.'});}
+  if(!dadosValidos){
+    const reg=await lerCache('usuarios');
+    if(reg&&Array.isArray(reg.dados)){SS({usuarios:reg.dados});}
+    else{SS({error:'Nenhum dado offline disponível.'});}
+  }
 }
 // ─── FIM ETAPA 1B ──────────────────────────────────────────────────────────
 
