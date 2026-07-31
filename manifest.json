@@ -3,6 +3,7 @@
   "short_name": "ChecklistOP",
   "description": "Checklist digital de frota — Atalat",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#202B2A",
