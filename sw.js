@@ -6,8 +6,7 @@ const CACHE_NAME = 'checklistop-v1';
 
 const SHELL = [
   './',
-  './index.html',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'
+  './index.html'
 ];
 
 // INSTALL — pré-cacheia o shell da aplicação
@@ -29,10 +28,8 @@ self.addEventListener('activate', (event) => {
         keys
           .filter((key) => key !== CACHE_NAME)
           .map((key) => caches.delete(key))
-      );
+      );\
     }).then(() => {
-      // Assume controle das abas já abertas.
-      // Seguro porque o SW só é ativado quando não há abas com versão anterior.
       return self.clients.claim();
     })
   );
@@ -48,19 +45,20 @@ self.addEventListener('fetch', (event) => {
   // Recursos do Supabase (API, Storage, Auth) — sempre rede, nunca cache
   if (url.hostname.includes('supabase.co')) return;
 
+  // CDN externa (chart.js, xlsx, pptxgenjs, supabase-js) — sempre rede, nunca cache
+  if (url.hostname.includes('jsdelivr.net')) return;
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) {
         // Retorna do cache e em segundo plano tenta atualizar
-        const networkFetch = fetch(event.request, { mode: 'cors' })
+        fetch(event.request, { mode: 'cors' })
           .then((response) => {
             if (response && response.status === 200) {
               return caches.open(CACHE_NAME).then((cache) => {
                 cache.put(event.request, response.clone());
-                return response;
               });
             }
-            return response;
           })
           .catch(() => { /* offline — ignora */ });
 
