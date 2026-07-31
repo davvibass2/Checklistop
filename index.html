@@ -3,8 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-  <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#202B2A">
 <title>ChecklistOP</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -268,8 +266,8 @@ async function confirmPin(pin){
     await ldAH();
   } else {
     SS({cu,screen:'setup',error:null,itens:cpT(cu.perfil)});
-    await ldV();
-    if(TMPL[cu.perfil]&&TMPL[cu.perfil].ur)await ldR();
+    await ldVComCache();
+    if(TMPL[cu.perfil]&&TMPL[cu.perfil].ur)await ldRComCache();
     if(cu.perfil!=='motorista'){const{data}=await sb.from('usuarios').select('nome').eq('perfil','motorista').eq('ativo',true);SS({motoristas:data||[]});}
     if(cu.perfil==='mecanico')await ldMP();
   }
@@ -601,7 +599,7 @@ function render(){
 }
 
 function rLogin(){
-  if(!S.usuarios.length){setTimeout(ldU,0);return'<div class="ldg">Carregando...</div>';}
+  if(!S.usuarios.length){setTimeout(ldUComCache,0);return'<div class="ldg">Carregando...</div>';}
   return`<div style="text-align:center;margin-bottom:18px;"><div style="display:inline-block;background:linear-gradient(180deg,#1482C8,#2D5096);border-radius:16px;padding:14px 20px;"><img src="${LOGO_M}" alt="Atalat" style="height:85px;width:auto;display:block;"></div></div>
     <h1 class="t" style="text-align:center;">ChecklistOP</h1>
     <p class="s" style="text-align:center;">Digite seu nome para continuar.</p>
@@ -630,7 +628,7 @@ function rSetup(){
   }
   let rb='';
   if(tpl.ur){
-    if(!S.rotas.length){setTimeout(ldR,0);rb=`<label class="fl">Rota</label><div class="ldg" style="padding:12px 0;">Carregando...</div>`;}
+    if(!S.rotas.length){setTimeout(ldRComCache,0);rb=`<label class="fl">Rota</label><div class="ldg" style="padding:12px 0;">Carregando...</div>`;}
     else if(S.selRota){rb=`<label class="fl">Rota</label><div class="lc" style="display:flex;align-items:center;justify-content:space-between;cursor:default;"><span class="lp">${S.selRota.nome}</span><button class="ib" onclick="SS({selRota:null,rq:''})">Trocar</button></div>`;}
     else{rb=`<label class="fl">Rota</label><input type="text" id="rs2" placeholder="Digite pra buscar..." autocomplete="off" oninput="flRota(this.value)"><div id="rr">${buRota(S.rq)}</div>`;}
   }
@@ -1135,8 +1133,8 @@ async function initApp(){
     await ldAH();render();
   } else {
     S.screen='setup';S.itens=cpT(sv.perfil);render();
-    await ldV();
-    if(TMPL[sv.perfil]&&TMPL[sv.perfil].ur)await ldR();
+    await ldVComCache();
+    if(TMPL[sv.perfil]&&TMPL[sv.perfil].ur)await ldRComCache();
     if(sv.perfil!=='motorista'){const{data}=await sb.from('usuarios').select('nome').eq('perfil','motorista').eq('ativo',true);S.motoristas=data||[];}
     if(sv.perfil==='mecanico')await ldMP();
     render();
@@ -1439,8 +1437,86 @@ async function importarJSON(file){
   reader.readAsText(file);
 }
 
-  if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
+// ─── ETAPA 1B — Cache offline de dados de apoio ───────────────────────────
+// Abre (ou cria) o IndexedDB checklistop, store "cache".
+// Princípio 24.4: zero dependência no fluxo online.
+function openCacheDB(){
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.open('checklistop',1);
+    req.onupgradeneeded=e=>{
+      const db=e.target.result;
+      if(!db.objectStoreNames.contains('cache')){
+        db.createObjectStore('cache',{keyPath:'chave'});
+      }
+    };
+    req.onsuccess=e=>resolve(e.target.result);
+    req.onerror=e=>reject(e.target.error);
+  });
+}
+async function gravarCache(chave,dados){
+  try{
+    const db=await openCacheDB();
+    const tx=db.transaction('cache','readwrite');
+    tx.objectStore('cache').put({chave,dados,atualizado_em:new Date().toISOString()});
+  }catch(_){}
+}
+async function lerCache(chave){
+  try{
+    const db=await openCacheDB();
+    return await new Promise((resolve,reject)=>{
+      const req=db.transaction('cache','readonly').objectStore('cache').get(chave);
+      req.onsuccess=e=>resolve(e.target.result);
+      req.onerror=e=>reject(e.target.error);
+    });
+  }catch(_){return null;}
+}
+
+// Wrapper de ldV() com lógica online/offline e fallback para cache.
+async function ldVComCache(){
+  if(navigator.onLine){
+    try{
+      await ldV();
+      if(S.veiculos&&S.veiculos.length)await gravarCache('veiculos',S.veiculos);
+      return;
+    }catch(_){}
+  }
+  const reg=await lerCache('veiculos');
+  if(reg&&reg.dados&&reg.dados.length){SS({veiculos:reg.dados});}
+  else{SS({error:'Nenhum dado offline disponível.'});}
+}
+
+// Wrapper de ldR() com lógica online/offline e fallback para cache.
+async function ldRComCache(){
+  if(navigator.onLine){
+    try{
+      await ldR();
+      if(S.rotas&&S.rotas.length)await gravarCache('rotas',S.rotas);
+      return;
+    }catch(_){}
+  }
+  const reg=await lerCache('rotas');
+  if(reg&&reg.dados&&reg.dados.length){SS({rotas:reg.dados});}
+  else{SS({error:'Nenhum dado offline disponível.'});}
+}
+
+// Wrapper de ldU() com lógica online/offline e fallback para cache.
+// OBS-28: formato dos dados preservado sem alterações.
+async function ldUComCache(){
+  if(navigator.onLine){
+    try{
+      await ldU();
+      if(S.usuarios&&S.usuarios.length)await gravarCache('usuarios',S.usuarios);
+      return;
+    }catch(_){}
+  }
+  const reg=await lerCache('usuarios');
+  if(reg&&reg.dados&&reg.dados.length){SS({usuarios:reg.dados});}
+  else{SS({error:'Nenhum dado offline disponível.'});}
+}
+// ─── FIM ETAPA 1B ──────────────────────────────────────────────────────────
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){
     navigator.serviceWorker.register('./sw.js');
   });
 }
