@@ -182,7 +182,7 @@ let S={
   motoristas:[],selU:null,cu:null,selV:null,svid:'',
   taco:'',km:'',tipoRota:'saida',motRel:'',motivo:'',
   abast:null,itens:[],obsG:'',fotos:[],fp:[],
-  submitting:false,error:null,history:[],
+  submitting:false,error:null,offlineSaved:false,history:[],
   svTab:'checklists',clFilter:'pendente',allCL:[],selDetail:null,
   fPerfil:'',fUsuario:'',fPlaca:'',fDataIni:'',fDataFim:'',
   eqForm:null,veicForm:null,rotaForm:null,
@@ -280,7 +280,7 @@ function logout(){
   SS({screen:'login',cu:null,selU:null,selV:null,taco:'',km:'',tipoRota:'saida',motRel:'',motivo:'',
     abast:null,itens:[],obsG:'',fotos:[],fp:[],error:null,history:[],usuarios:[],allCL:[],
     selDetail:null,eqForm:null,veicForm:null,rotaForm:null,rotas:[],rq:'',selRota:null,lq:'',svid:'',
-    mpend:[],resolvMid:null,resolvMitens:null,editCL:null,avHist:[],avScreen:'inicio',
+    mpend:[],resolvMid:null,resolvMitens:null,editCL:null,offlineSaved:false,avHist:[],avScreen:'inicio',
   avEditId:null,avConfirmDel:null,avDetAtual:null,avCodigo:'',avData:'',avHoraIni:'',avHoraFim:'',avKmIni:'',avKmFim:'',avLitros:''});
 }
 
@@ -351,7 +351,7 @@ function newCL(){
   if(S.cu.perfil==='mecanico')ldMP();
   SS({screen:'setup',selV:null,svid:'',taco:'',km:'',selRota:null,rq:'',
     motRel:'',motivo:'',abast:null,obsG:'',fotos:[],fp:[],
-    itens:cpT(S.cu.perfil),resolvMid:null,resolvMitens:null,error:null});
+    itens:cpT(S.cu.perfil),resolvMid:null,resolvMitens:null,error:null,offlineSaved:false});
 }
 function resolverM(mid){
   const m=S.mpend.find(x=>x.id===mid);if(!m)return;
@@ -666,9 +666,14 @@ function rCL(){
   const ab=tp==='mecanico'?`<div class="sb"><div class="sh"><span class="sn">${String(sn+1).padStart(2,'0')}</span><span class="sname">Abastecimento</span></div><div class="trow"><button type="button" class="tbtn ${S.abast===true?'on':''}" onclick="SS({abast:true})">Sim</button><button type="button" class="tbtn ${S.abast===false?'on':''}" onclick="SS({abast:false})">Não</button></div></div>`:'';
   const obs=`<div class="sb"><label class="fl">${tp==='mecanico'?'O que foi feito / peças trocadas':'Observações'}</label><textarea placeholder="Detalhes, serviços realizados..." oninput="S.obsG=this.value">${S.obsG}</textarea><label class="fl">Fotos (opcional)</label><div class="pstrip">${S.fp.map(p=>`<a href="${p}" target="_blank"><img class="pthumb" src="${p}"></a>`).join('')}</div><label class="padd">📷 Adicionar foto<input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="addF(this.files)"></label></div>`;
   return`<h1 class="t">${PL[tp]} — ${S.selV.placa}</h1><p class="s">Marque o status de cada item.</p>${sh}${ab}${obs}
-    <div class="sfooter"><div class="ppill">${mc} de ${tot} marcados</div><button class="bp" ${S.submitting?'disabled':''} onclick="submitCL()">${S.submitting?'Enviando...':'Enviar checklist'}</button><button class="bs" style="margin-top:8px;" onclick="SS({screen:'setup',error:null})">← Voltar</button></div>`;
+    <div class="sfooter"><div class="ppill">${mc} de ${tot} marcados</div><button class="bp" ${S.submitting?'disabled':''} onclick="submitCLOffline()">${S.submitting?'Enviando...':'Enviar checklist'}</button><button class="bs" style="margin-top:8px;" onclick="SS({screen:'setup',error:null})">← Voltar</button></div>`;
 }
-function rOk(){return`<div class="sw"><div class="stamp">CONCLUÍDO</div><div class="sd">Checklist do veículo ${S.selV.placa} enviado.</div><button class="bp" onclick="newCL()">Novo checklist</button><button class="bs" onclick="showHist()">Ver histórico</button></div>`;}
+function rOk(){
+  const msg=S.offlineSaved
+    ?`Checklist do veículo ${S.selV.placa} salvo no dispositivo.<br><small>Será enviado automaticamente quando houver conexão.</small>`
+    :`Checklist do veículo ${S.selV.placa} enviado.`;
+  return`<div class="sw"><div class="stamp">${S.offlineSaved?'SALVO':'CONCLUÍDO'}</div><div class="sd">${msg}</div><button class="bp" onclick="newCL()">Novo checklist</button><button class="bs" onclick="showHist()">Ver histórico</button></div>`;
+}
 function rHist(){
   const back=`<button class="bs" onclick="SS({screen:'setup'})">Voltar</button>`;
   if(!S.history.length)return`<h1 class="t">Histórico</h1><div class="emp">Nenhum checklist ainda.</div>${back}`;
@@ -1124,6 +1129,7 @@ function rAvDet(){
 }
 
 async function initApp(){
+  syncQueue();
   let sv=null;try{sv=JSON.parse(localStorage.getItem('cop_s')||'null');}catch(e){}
   if(!sv||!sv.id){render();return;}
   S.cu=sv;
@@ -1444,11 +1450,14 @@ async function importarJSON(file){
 // Princípio 24.4: zero dependência no fluxo online.
 function openCacheDB(){
   return new Promise((resolve,reject)=>{
-    const req=indexedDB.open('checklistop',1);
+    const req=indexedDB.open('checklistop',2);
     req.onupgradeneeded=e=>{
       const db=e.target.result;
       if(!db.objectStoreNames.contains('cache')){
         db.createObjectStore('cache',{keyPath:'chave'});
+      }
+      if(!db.objectStoreNames.contains('offline_queue')){
+        db.createObjectStore('offline_queue',{keyPath:'operation_id'});
       }
     };
     req.onsuccess=e=>resolve(e.target.result);
@@ -1522,6 +1531,144 @@ async function ldUComCache(){
   }
 }
 // ─── FIM ETAPA 1B ──────────────────────────────────────────────────────────
+// ─── ETAPA 1C — Fila offline e sincronização ──────────────────────────────
+
+// Flag para evitar sync concorrente
+let _syncing = false;
+
+// Salva checklist na offline_queue quando sem internet
+async function salvarOffline(pl, fotosGerais, itensComFotos, temNOK, nokItens, resolvMid){
+  try{
+    const db = await openCacheDB();
+    const registro = {
+      operation_id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      tipo: 'checklist',
+      status: 'pendente',
+      payload: pl,
+      fotos_gerais: fotosGerais,
+      fotos_itens: itensComFotos,
+      tem_nok: temNOK,
+      nok_itens: nokItens,
+      resolv_mid: resolvMid || null
+    };
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('offline_queue', 'readwrite');
+      tx.objectStore('offline_queue').put(registro);
+      tx.oncomplete = resolve;
+      tx.onerror = e => reject(e.target.error);
+    });
+    return true;
+  } catch(e){
+    return false;
+  }
+}
+
+// Percorre a fila FIFO e envia ao Supabase, um por vez
+async function syncQueue(){
+  if(_syncing || !navigator.onLine) return;
+  _syncing = true;
+  try{
+    const db = await openCacheDB();
+    const itens = await new Promise((resolve, reject) => {
+      const tx = db.transaction('offline_queue', 'readonly');
+      const req = tx.objectStore('offline_queue').getAll();
+      req.onsuccess = e => resolve(e.target.result || []);
+      req.onerror = e => reject(e.target.error);
+    });
+    // Ordena por timestamp ASC (FIFO)
+    const pendentes = itens.filter(i => i.status === 'pendente').sort((a,b) => a.timestamp - b.timestamp);
+    for(const item of pendentes){
+      try{
+        // 1. Upload de fotos gerais
+        const fu = [];
+        for(const f of (item.fotos_gerais || [])) fu.push(await upFoto(f));
+        // 2. Upload de fotos por item e monta itens com URLs
+        const ip = [];
+        const payload_itens = item.payload.itens || [];
+        for(let i = 0; i < payload_itens.length; i++){
+          const ifu = [];
+          const blobs = (item.fotos_itens && item.fotos_itens[i]) ? item.fotos_itens[i] : [];
+          for(const f of blobs) ifu.push(await upFoto(f));
+          ip.push({...payload_itens[i], fotos: ifu});
+        }
+        // 3. Monta payload final com URLs das fotos
+        const pl = {...item.payload, fotos: fu, itens: ip};
+        // 4. Insert do checklist
+        const{data:ins, error} = await sb.from('checklists').insert(pl).select().single();
+        if(error) throw error;
+        // 5. Se tinha NOK, criar manutenção
+        if(item.tem_nok && item.nok_itens && item.nok_itens.length){
+          await sb.from('manutencoes').insert({
+            veiculo_id: pl.veiculo_id, veiculo_placa: pl.veiculo_placa,
+            origem_checklist_id: ins.id, origem_usuario_nome: pl.usuario_nome,
+            itens: item.nok_itens, status: 'pendente',
+            checklist_origem_bo: ins.bo_numero
+          });
+        }
+        // 6. Se resolvia manutenção pendente
+        if(item.resolv_mid){
+          await sb.from('manutencoes').update({
+            status:'resolvido', resolvido_checklist_id:ins.id,
+            resolvido_por:pl.usuario_nome, resolvido_em:new Date().toISOString()
+          }).eq('id', item.resolv_mid);
+        }
+        // 7. Remove da fila após sucesso
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction('offline_queue', 'readwrite');
+          tx.objectStore('offline_queue').delete(item.operation_id);
+          tx.oncomplete = resolve;
+          tx.onerror = e => reject(e.target.error);
+        });
+      } catch(e){
+        // Falha: para a sync, mantém restantes na fila
+        break;
+      }
+    }
+  } catch(_){}
+  _syncing = false;
+}
+
+// Ponto único de decisão: online → submitCL() / offline → fila
+async function submitCLOffline(){
+  if(navigator.onLine){ await submitCL(); return; }
+  const tp = S.cu.perfil; const tpl = TMPL[tp];
+  const ss = S.itens.filter(i => !i.status);
+  if(ss.length > 0){ SS({error:`Marque todos os itens (falta: "${ss[0].item}").`}); return; }
+  if(tpl.mrp){ const sm = S.itens.find(i => i.status === tpl.ps && !i.motivo.trim()); if(sm){ SS({error:`Explique o motivo em "${sm.item}".`}); return; } }
+  SS({submitting: true, error: null});
+  // Coleta fotos como Blob (sem fazer upload — sem internet)
+  const fotosGerais = [...S.fotos];
+  const fotosItens = S.itens.map(it => [...(it.fotos || [])]);
+  const ip = S.itens.map((it, i) => ({secao:it.secao, item:it.item, status:it.status, motivo:it.motivo||'', fotos:[]}));
+  const temNOK = ip.some(i => i.status === 'nok');
+  const nokItens = temNOK ? ip.filter(i => i.status === 'nok').map(i => ({secao:i.secao, item:i.item, motivo:i.motivo||''})) : [];
+  const pl = {
+    usuario_id:S.cu.id, usuario_nome:S.cu.nome,
+    veiculo_id:S.selV.id, veiculo_placa:S.selV.placa, veiculo_modelo:S.selV.modelo||null,
+    perfil:tp, tacografo:S.taco||null, km:S.km?Number(S.km):null,
+    motorista_relacionado:S.motRel||null, itens:ip,
+    observacoes_gerais:S.obsG||null, fotos:[],
+    status:'pendente',
+    encaminhado_mecanico:(tp==='motorista'&&temNOK),
+    encaminhado_em:(tp==='motorista'&&temNOK)?new Date().toISOString():null
+  };
+  if(tpl.ur) pl.rota = S.selRota ? S.selRota.nome : null;
+  if(tp === 'motorista') pl.tipo_rota = S.tipoRota;
+  if(tp === 'mecanico'){ pl.motivo=S.motivo||null; pl.abastecido=S.abast; pl.tipo_manutencao=S.resolvMid?'corretivo':'preventivo'; }
+  const ok = await salvarOffline(pl, fotosGerais, fotosItens, temNOK, nokItens, S.resolvMid);
+  if(ok){
+    SS({submitting:false, screen:'ok', offlineSaved:true});
+  } else {
+    SS({submitting:false, error:'Não foi possível salvar offline. Tente novamente.'});
+  }
+}
+
+// Dispara sync ao voltar internet
+window.addEventListener('online', () => { syncQueue(); });
+
+// ─── FIM ETAPA 1C ──────────────────────────────────────────────────────────
+
 
 if('serviceWorker' in navigator){
   window.addEventListener('load',function(){
