@@ -362,7 +362,7 @@ function resolverM(mid){
 async function approveCL(id){
   const{error}=await sb.from('checklists').update({status:'aprovado',aprovado_por:S.cu.nome,aprovado_em:new Date().toISOString()}).eq('id',id);
   if(error){SS({error:'Erro: '+error.message});return;}
-  if(S.selDetail&&S.selDetail.id===id)SS({selDetail:{...S.selDetail,status:'aprovado',aprovado_por:S.cu.nome,aprovado_em:new Date().toISOString()}});
+  SS({selDetail:null,screen:'sv'});
   await ldCL(S.clFilter);
 }
 async function encaminhar(id){
@@ -584,6 +584,22 @@ async function saveEdit(){
   if(ec.perfil==='mecanico'){pl.motivo=ec.motivo||null;pl.abastecido=ec.abastecido;}
   const{data:upd,error}=await sb.from('checklists').update(pl).eq('id',ec.id).select().single();
   if(error){SS({submitting:false,error:'Erro: '+error.message});return;}
+  // Sincroniza manutencoes pendentes do checklist editado
+  try{
+    const{data:mps}=await sb.from('manutencoes').select('id,itens')
+      .eq('origem_checklist_id',ec.id).eq('status','pendente');
+    if(mps&&mps.length){
+      const nokRestantes=ec.itens.filter(i=>i.status==='nok')
+        .map(i=>({secao:i.secao,item:i.item,motivo:i.motivo||''}));
+      for(const m of mps){
+        if(nokRestantes.length===0){
+          await sb.from('manutencoes').delete().eq('id',m.id);
+        }else{
+          await sb.from('manutencoes').update({itens:nokRestantes}).eq('id',m.id);
+        }
+      }
+    }
+  }catch(e){console.error('Sync manutencao:',e);}
   SS({submitting:false,selDetail:upd,editCL:null});await ldCL(S.clFilter);
 }
 
@@ -807,7 +823,7 @@ function rEdit(){
   const sh=ss.map(sc=>{
     const rws=ec.itens.map((it,idx)=>({it,idx})).filter(x=>x.it.secao===sc).map(({it,idx})=>{
       const sts=(tpl&&tpl.ss)||['ok','nok','na'];
-      const bs=sts.map(st=>`<button class="sbtn ${it.status===st?'on':''}" onclick="setEIS(${idx},'${st}')">${SL[st]}</button>`).join('');
+      const bs=sts.map(st=>`<button class="sbtn ${it.status===st?'on':''}" data-s="${st}" onclick="setEIS(${idx},'${st}')">${SL[st]}</button>`).join('');
       const ip=it.status===(tpl&&tpl.ps);
       return`<div class="ir ${ip?'nk':''}"><div class="itop"><div class="ilbl">${it.item}</div><div class="sbtns">${bs}</div></div>${(ip&&tpl&&tpl.mrp)?`<div class="iex"><span class="rtag">Motivo</span><textarea oninput="S.editCL.itens[${idx}].motivo=this.value">${it.motivo||''}</textarea></div>`:''}</div>`;
     }).join('');
