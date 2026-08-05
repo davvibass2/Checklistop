@@ -586,19 +586,28 @@ async function saveEdit(){
   if(error){SS({submitting:false,error:'Erro: '+error.message});return;}
   // Sincroniza manutencoes pendentes do checklist editado
   try{
+    // LOG-1C-DEBUG-START
+    console.log('[SYNC] ec.id:', ec.id);
     const{data:mps}=await sb.from('manutencoes').select('id,itens')
       .eq('origem_checklist_id',ec.id).eq('status','pendente');
+    console.log('[SYNC] mps count:', mps?mps.length:0, 'mps completo:', JSON.stringify(mps));
     if(mps&&mps.length){
       const nokRestantes=ec.itens.filter(i=>i.status==='nok')
         .map(i=>({secao:i.secao,item:i.item,motivo:i.motivo||''}));
+      console.log('[SYNC] nokRestantes:', JSON.stringify(nokRestantes));
       for(const m of mps){
         if(nokRestantes.length===0){
-          await sb.from('manutencoes').delete().eq('id',m.id);
+          console.log('[SYNC] DELETE id:', m.id);
+          const{data:dData,error:dErr}=await sb.from('manutencoes').delete().eq('id',m.id).select();
+          console.log('[SYNC] DELETE retorno data:', JSON.stringify(dData), 'error:', JSON.stringify(dErr));
         }else{
-          await sb.from('manutencoes').update({itens:nokRestantes}).eq('id',m.id);
+          console.log('[SYNC] UPDATE id:', m.id, 'itens:', JSON.stringify(nokRestantes));
+          const{data:uData,error:uErr}=await sb.from('manutencoes').update({itens:nokRestantes}).eq('id',m.id).select();
+          console.log('[SYNC] UPDATE retorno data:', JSON.stringify(uData), 'error:', JSON.stringify(uErr));
         }
       }
     }
+    // LOG-1C-DEBUG-END
   }catch(e){console.error('Sync manutencao:',e);}
   SS({submitting:false,selDetail:upd,editCL:null});await ldCL(S.clFilter);
 }
