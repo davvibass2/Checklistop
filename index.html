@@ -582,7 +582,9 @@ async function saveEdit(){
   if(tpl&&tpl.ur)pl.rota=ec.rota||null;
   if(ec.perfil==='motorista')pl.tipo_rota=ec.tipo_rota||null;
   if(ec.perfil==='mecanico'){pl.motivo=ec.motivo||null;pl.abastecido=ec.abastecido;}
+  console.log('[SAVEEDIT] antes do update');
   const{data:upd,error}=await sb.from('checklists').update(pl).eq('id',ec.id).select().single();
+  console.log('[SAVEEDIT] depois do update',{data:upd,error});
   if(error){SS({submitting:false,error:'Erro: '+error.message});return;}
   // Sincroniza manutencoes pendentes do checklist editado
   try{
