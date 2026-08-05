@@ -594,7 +594,7 @@ async function saveEdit(){
       .eq('origem_checklist_id',ec.id).eq('status','pendente');
     console.log('[SYNC] mps count:', mps?mps.length:0, 'mps completo:', JSON.stringify(mps));
     if(mps&&mps.length){
-      const nokRestantes=ec.itens.filter(i=>i.status==='nok')
+      const nokRestantes=upd.itens.filter(i=>i.status==='nok')
         .map(i=>({secao:i.secao,item:i.item,motivo:i.motivo||''}));
       console.log('[SYNC] nokRestantes:', JSON.stringify(nokRestantes));
       for(const m of mps){
