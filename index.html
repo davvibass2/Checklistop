@@ -1157,6 +1157,9 @@ function rAvDet(){
   `;
 }
 
+// Flag para evitar sync concorrente
+let _syncing = false;
+
 async function initApp(){
   syncQueue();
   let sv=null;try{sv=JSON.parse(localStorage.getItem('cop_s')||'null');}catch(e){}
@@ -1561,9 +1564,6 @@ async function ldUComCache(){
 }
 // ─── FIM ETAPA 1B ──────────────────────────────────────────────────────────
 // ─── ETAPA 1C — Fila offline e sincronização ──────────────────────────────
-
-// Flag para evitar sync concorrente
-let _syncing = false;
 
 // Salva checklist na offline_queue quando sem internet
 async function salvarOffline(pl, fotosGerais, itensComFotos, temNOK, nokItens, resolvMid){
