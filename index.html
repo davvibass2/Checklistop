@@ -594,7 +594,9 @@ async function saveEdit(){
       .eq('origem_checklist_id',ec.id).eq('status','pendente');
     console.log('[SYNC] mps count:', mps?mps.length:0, 'mps completo:', JSON.stringify(mps));
     if(mps&&mps.length){
-      const nokRestantes=upd.itens.filter(i=>i.status==='nok')
+      // Interseção: itens que ainda estão na manutenção E foram corrigidos no checklist
+      const nokNoChecklist=new Set(upd.itens.filter(i=>i.status==='nok').map(i=>i.item));
+      const nokRestantes=m.itens.filter(i=>nokNoChecklist.has(i.item))
         .map(i=>({secao:i.secao,item:i.item,motivo:i.motivo||''}));
       console.log('[SYNC] nokRestantes:', JSON.stringify(nokRestantes));
       for(const m of mps){
