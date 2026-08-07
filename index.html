@@ -480,11 +480,30 @@ async function ldReport(p){
   const{data}=await q;const cls=data||[];
   const pp={motorista:0,mecanico:0,lavador:0};const ps={pendente:0,aprovado:0};
   const pv={};const ppe={};const pg={};const prob={};let tip=0;
+  // v1.1 Sprint 1 — acumuladores novos (não alteram os existentes)
+  const pmNok={};const pmOk={};const pmTot={}; // por motorista: NOKs, OKs, total itens
+  const agora=Date.now();
+  const pendAntig=[];
   const probVeicSeen=new Set(); // evita contar mesmo problema no mesmo veículo mais de uma vez
   const agm=(pr==='tudo')||(pr==='custom'&&start&&end&&(end.getTime()-start.getTime())/(86400000)>45);
   cls.forEach(c=>{
     pp[c.perfil]=(pp[c.perfil]||0)+1;ps[c.status]=(ps[c.status]||0)+1;
     ppe[c.usuario_nome]=(ppe[c.usuario_nome]||0)+1;
+    // v1.1: acumula por motorista (só perfil motorista, não corretivos)
+    if(c.perfil==='motorista'&&c.tipo_manutencao!=='corretivo'){
+      const mn=c.usuario_nome;
+      if(!pmNok[mn]){pmNok[mn]=0;pmOk[mn]=0;pmTot[mn]=0;}
+      (c.itens||[]).forEach(i=>{
+        pmTot[mn]++;
+        if(i.status==='nok')pmNok[mn]++;
+        else if(i.status==='ok')pmOk[mn]++;
+      });
+    }
+    // v1.1: pendentes há mais de 24h (apenas motoristas)
+    if(c.status==='pendente'&&c.perfil==='motorista'){
+      const dt=new Date(c.criado_em).getTime();
+      if(agora-dt>86400000)pendAntig.push({nome:c.usuario_nome,placa:c.veiculo_placa,data:c.criado_em,id:c.id});
+    }
     const ch=agm?(c.criado_em||'').slice(0,7):(c.criado_em||'').slice(0,10);
     pg[ch]=(pg[ch]||0)+1;
     if(!pv[c.veiculo_placa])pv[c.veiculo_placa]={t:0,p:0};pv[c.veiculo_placa].t++;
@@ -504,7 +523,10 @@ async function ldReport(p){
   const tv=Object.entries(pv).sort((a,b)=>b[1].p-a[1].p).slice(0,8);
   const tp2=Object.entries(prob).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const tpe=Object.entries(ppe).sort((a,b)=>b[1]-a[1]);
-  SS({rPeriod:pr,report:{total:cls.length,pp,ps,tip,go,pg,agm,tv,tp2,tpe,label}});
+  // v1.1: monta rankings de motoristas
+  const rmNok=Object.entries(pmNok).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const rmConf=Object.entries(pmTot).filter(([,t])=>t>0).map(([n,t])=>[n,pmOk[n]||0,t,Math.round(((pmOk[n]||0)/t)*100)]).sort((a,b)=>b[3]-a[3]).slice(0,10);
+  SS({rPeriod:pr,report:{total:cls.length,pp,ps,tip,go,pg,agm,tv,tp2,tpe,label,rmNok,rmConf,pendAntig}});
 }
 async function setRP(p){await ldReport(p);}
 async function applyCP(){
@@ -878,12 +900,21 @@ function rSvRel(){
   const vt=r.tv.length?`<div class="cc"><h3>Veículos com mais problemas</h3><table class="ts"><thead><tr><th>Placa</th><th>Checklists</th><th>Problemas</th></tr></thead><tbody>${r.tv.map(([p,d])=>`<tr><td style="cursor:pointer;color:var(--blue);font-weight:600;" onclick="drillVeiculo('${p}')">${p}</td><td style="cursor:pointer;color:var(--blue);" onclick="drillVeiculo('${p}')">${d.t}</td><td style="cursor:pointer;color:${d.p>0?'var(--nok)':'inherit'};font-weight:${d.p>0?'700':'400'};" onclick="drillVeiculo('${p}')">${d.p}</td></tr>`).join('')}</tbody></table></div>`:'';
   const pt=r.tp2.length?`<div class="cc"><h3>Problemas mais frequentes</h3><table class="ts"><thead><tr><th>Item</th><th>Ocorrências</th></tr></thead><tbody>${r.tp2.map(([i,n])=>`<tr style="cursor:pointer;" onclick="drillProblema('${i}')"><td style="color:var(--blue);">${i}</td><td style="color:var(--nok);font-weight:700;">${n}</td></tr>`).join('')}</tbody></table></div>`:'';
   const pe=`<div class="cc"><h3>Checklists por pessoa</h3><table class="ts"><thead><tr><th>Nome</th><th>Checklists</th></tr></thead><tbody>${r.tpe.map(([n,c])=>`<tr><td>${n}</td><td>${c}</td></tr>`).join('')}</tbody></table></div>`;
+  // v1.1: cards por perfil
+  const cperfil=`<div class="kg"><div class="kc"><div class="kv" style="color:var(--blue)">${r.pp.motorista||0}</div><div class="kl">Motoristas</div></div><div class="kc"><div class="kv" style="color:#0D5A94">${r.pp.lavador||0}</div><div class="kl">Lavadores</div></div><div class="kc"><div class="kv" style="color:#7FC1E8">${r.pp.mecanico||0}</div><div class="kl">Mecânicos</div></div></div>`;
+  // v1.1: alerta de pendentes > 24h
+  const alertPend=r.pendAntig&&r.pendAntig.length?`<div class="cc" style="border-left:4px solid var(--nok);"><h3 style="color:var(--nok)">⚠ Pendentes há mais de 24h (${r.pendAntig.length})</h3><table class="ts"><thead><tr><th>Motorista</th><th>Veículo</th><th>Data</th></tr></thead><tbody>${r.pendAntig.map(p=>`<tr><td>${p.nome}</td><td>${p.placa}</td><td>${fmtD(p.data)}</td></tr>`).join('')}</tbody></table></div>`:'';
+  // v1.1: ranking NOK motoristas
+  const rnok=r.rmNok&&r.rmNok.length?`<div class="cc"><h3>Motoristas com mais NOKs</h3><table class="ts"><thead><tr><th>Motorista</th><th>NOKs</th></tr></thead><tbody>${r.rmNok.map(([n,v])=>`<tr><td>${n}</td><td style="color:var(--nok);font-weight:700;">${v}</td></tr>`).join('')}</tbody></table></div>`:'';
+  // v1.1: ranking conformidade motoristas
+  const rconf=r.rmConf&&r.rmConf.length?`<div class="cc"><h3>Taxa de conformidade — Motoristas</h3><table class="ts"><thead><tr><th>Motorista</th><th>OK</th><th>Total</th><th>%</th></tr></thead><tbody>${r.rmConf.map(([n,ok,tot,pct])=>`<tr><td>${n}</td><td>${ok}</td><td>${tot}</td><td style="font-weight:700;color:${pct>=90?'var(--ok)':pct>=70?'var(--amber)':'var(--nok)'}">${pct}%</td></tr>`).join('')}</tbody></table></div>`:'';
   setTimeout(renderCharts,0);
   return`<div id="pr"><h1 class="t">Relatório geral</h1><p class="s">${r.label}</p>${pf}
     <div class="kg"><div class="kc"><div class="kv">${r.total}</div><div class="kl">Checklists</div></div><div class="kc"><div class="kv">${r.ps.pendente||0}</div><div class="kl">Pendentes</div></div><div class="kc"><div class="kv">${r.ps.aprovado||0}</div><div class="kl">Aprovados</div></div><div class="kc"><div class="kv">${r.tip}</div><div class="kl">Problemas</div></div></div>
+    ${cperfil}${alertPend}
     <div class="cc"><h3>Por perfil</h3><canvas id="cp" height="180"></canvas></div>
     <div class="cc"><h3>Enviados (${r.agm?'por mês':'por dia'})</h3><canvas id="ce" height="180"></canvas></div>
-    ${vt}${pt}${pe}</div>
+    ${rnok}${rconf}${vt}${pt}${pe}</div>
     <div class="erow np"><button class="ba" onclick="expXL()">⬇ Baixar Excel</button><button class="ba" onclick="expPPTX()">⬇ Baixar PowerPoint</button><button class="bs" onclick="window.print()">🖨 Gerar PDF</button></div>`;
 }
 function renderCharts(){
